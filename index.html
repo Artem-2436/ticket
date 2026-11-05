@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Xcortex Event Hub</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Библиотеки -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
@@ -14,13 +15,15 @@
     <!-- Главная -->
     <div id="view-home">
         <h1>Xcortex Ticket</h1>
-        <p class="subtitle">Система контроля доступа</p>
+        <p class="subtitle">Система контроля доступа v6.1</p>
         <button class="btn-pri" onclick="showView('admin')">🛡 Панель Организатора</button>
     </div>
 
     <!-- Админ -->
     <div id="view-admin" class="hidden">
         <h1>Организатор</h1>
+        
+        <!-- Табы -->
         <div style="display:flex; gap:5px; margin-bottom:15px;">
             <button class="tab-btn active" id="tab-nfc-reg" onclick="switchTab('nfc-reg')">💳 NFC Рег.</button>
             <button class="tab-btn" id="tab-qr-reg" onclick="switchTab('qr-reg')">📱 QR Рег.</button>
@@ -32,18 +35,26 @@
             <input type="text" id="input-name-nfc" class="form-input" placeholder="ФИО Участника">
             <button class="btn-pri" onclick="startRegisterNFC()">📱 Приложить карту</button>
             <div id="status-nfc-reg" class="status-box hidden"></div>
-            <hr>
-            <strong>База (<span id="count-users">0</span>)</strong>
+            
+            <hr style="border:0; height:1px; background:#eee; margin:15px 0;">
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <strong>База участников</strong>
+                <span class="badge" id="count-users">0</span>
+            </div>
+            <!-- Контейнер для списка пользователей -->
             <div class="user-list" id="users-container"></div>
         </div>
 
         <!-- Таб 2: QR Регистрация -->
         <div id="panel-qr-reg" class="tab-panel hidden">
             <div id="qr-reg-idle">
+                <p style="color:#666; font-size:0.9rem; margin-bottom:10px;">Генерирует одноразовый код для клиента без карты.</p>
                 <button class="btn-pri" onclick="startRegistrationQR()">🚀 Выдать QR (60 сек)</button>
             </div>
             <div id="qr-reg-active" class="hidden">
-                <div class="timer-box">⏳ <span id="reg-timer">60</span> сек.</div>
+                <div class="timer-box">⏳ Осталось: <span id="reg-timer">60</span> сек.</div>
+                <p style="font-size:0.9rem; color:#666;">Покажите этот код клиенту:</p>
                 <div id="invite-qr-container" class="qr-center"></div>
                 <div id="qr-reg-status-msg" class="status-box st-info">Код сохранен.</div>
             </div>
@@ -52,8 +63,13 @@
         <!-- Таб 3: Проверка Входа -->
         <div id="panel-check" class="tab-panel hidden">
             <button class="btn-pri" onclick="startCheckNFC()">💳 Сканировать NFC</button>
-            <button class="btn-sec" onclick="openScanner()">📷 Сканировать QR</button>
-            <div id="scanner-view" class="hidden"><div id="reader"></div><button class="btn-danger btn-small" onclick="closeScanner()">Стоп</button></div>
+            <button class="btn-sec" onclick="openScanner()">📷 Сканировать QR билет</button>
+            
+            <div id="scanner-view" class="hidden" style="margin-top:15px;">
+                <div id="reader"></div>
+                <button class="btn-danger btn-small" onclick="closeScanner()">Стоп камера</button>
+            </div>
+
             <div id="check-result" class="status-box hidden"></div>
         </div>
 
@@ -63,9 +79,13 @@
     <!-- Клиент (Скрытый блок) -->
     <div id="view-client-login" class="hidden">
         <h1>Ваш Пропуск</h1>
+        <p class="subtitle">Покажите этот экран охраннику</p>
         <div id="client-ticket-qr" class="qr-center large-qr"></div>
-        <div class="status-box st-ok" style="text-align:center;">Код: <strong id="client-code-display"></strong></div>
-        <button class="btn-sec" onclick="window.close()">Закрыть</button>
+        <div class="status-box st-ok" style="text-align:center; margin-top:15px;">
+            Код билета: <strong id="client-code-display"></strong>
+        </div>
+        <br>
+        <button class="btn-sec" onclick="window.close()">Закрыть окно</button>
     </div>
 </div>
 
