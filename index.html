@@ -5,108 +5,70 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Xcortex Event Hub</title>
     <link rel="stylesheet" href="style.css">
-    
-    <!-- Библиотеки -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
 
 <div class="container" id="app">
-    <!-- ГЛАВНОЕ МЕНЮ -->
+    <!-- Главная -->
     <div id="view-home">
         <h1>Xcortex Ticket</h1>
-        <p class="subtitle">Система контроля доступа v6.0 Full</p>
-        
+        <p class="subtitle">Система контроля доступа</p>
         <button class="btn-pri" onclick="showView('admin')">🛡 Панель Организатора</button>
-        <br><br>
-        <small style="color:#aaa;">Asinhrom / Xcortex Project</small>
     </div>
 
-    <!-- АДМИНСКАЯ ПАНЕЛЬ -->
+    <!-- Админ -->
     <div id="view-admin" class="hidden">
         <h1>Организатор</h1>
-        
-        <!-- Табы навигации -->
-        <div style="display:flex; gap:5px; margin-bottom:20px;">
-            <button class="btn-sec tab-btn" id="tab-nfc-reg" onclick="switchTab('nfc-reg')" style="flex:1;">💳 NFC Рег.</button>
-            <button class="btn-sec tab-btn" id="tab-qr-reg" onclick="switchTab('qr-reg')" style="flex:1;">📱 QR Рег.</button>
-            <button class="btn-sec tab-btn" id="tab-check" onclick="switchTab('check')" style="flex:1;">✅ Проверка</button>
+        <div style="display:flex; gap:5px; margin-bottom:15px;">
+            <button class="tab-btn active" id="tab-nfc-reg" onclick="switchTab('nfc-reg')">💳 NFC Рег.</button>
+            <button class="tab-btn" id="tab-qr-reg" onclick="switchTab('qr-reg')">📱 QR Рег.</button>
+            <button class="tab-btn" id="tab-check" onclick="switchTab('check')">✅ Проверка</button>
         </div>
 
-        <!-- БЛОК 1: РЕГИСТРАЦИЯ ПО NFC -->
-        <div id="panel-nfc-reg" class="tab-panel hidden">
-            <div class="form-group">
-                <label class="form-label">ФИО Участника</label>
-                <input type="text" id="input-name-nfc" class="form-input" placeholder="Иванов Иван Иванович">
-            </div>
-            
-            <button class="btn-pri" onclick="startRegisterNFC()">📱 Приложить карту для записи</button>
+        <!-- Таб 1: NFC Регистрация -->
+        <div id="panel-nfc-reg" class="tab-panel">
+            <input type="text" id="input-name-nfc" class="form-input" placeholder="ФИО Участника">
+            <button class="btn-pri" onclick="startRegisterNFC()">📱 Приложить карту</button>
             <div id="status-nfc-reg" class="status-box hidden"></div>
-            
-            <hr style="border:0; height:1px; background:#eee; margin:20px 0;">
-            
-            <strong>База участников (<span id="count-users">0</span>)</strong>
+            <hr>
+            <strong>База (<span id="count-users">0</span>)</strong>
             <div class="user-list" id="users-container"></div>
         </div>
 
-        <!-- БЛОК 2: РЕГИСТРАЦИЯ ПО QR (ВРЕМЕННЫЙ КОД) -->
+        <!-- Таб 2: QR Регистрация -->
         <div id="panel-qr-reg" class="tab-panel hidden">
             <div id="qr-reg-idle">
-                <p>Нажмите кнопку, чтобы сгенерировать одноразовый пропуск.</p>
-                <button class="btn-pri" onclick="startRegistrationQR()">🚀 Выдать QR для регистрации</button>
+                <button class="btn-pri" onclick="startRegistrationQR()">🚀 Выдать QR (60 сек)</button>
             </div>
-
             <div id="qr-reg-active" class="hidden">
-                <div class="timer-box">⏳ Живет: <span id="reg-timer">60</span> сек.</div>
-                <p style="font-size:0.9rem; color:#666;">Покажите этот код клиенту:</p>
+                <div class="timer-box">⏳ <span id="reg-timer">60</span> сек.</div>
                 <div id="invite-qr-container" class="qr-center"></div>
-                
-                <hr style="border:0; height:1px; background:#eee; margin:20px 0;">
-                
-                <div class="status-box st-info" id="qr-reg-status-msg">
-                    Ожидание сканирования...<br>
-                    <small>Код сохранен в базе автоматически.</small>
-                </div>
+                <div id="qr-reg-status-msg" class="status-box st-info">Код сохранен.</div>
             </div>
         </div>
 
-        <!-- БЛОК 3: ПРОВЕРКА ВХОДА -->
+        <!-- Таб 3: Проверка Входа -->
         <div id="panel-check" class="tab-panel hidden">
-            <button class="btn-pri" onclick="startCheckNFC()">💳 Сканировать NFC карту</button>
-            <button class="btn-sec" onclick="openScanner()">📷 Сканировать QR билет</button>
-            
-            <div id="scanner-view" class="hidden" style="margin-top:15px;">
-                <div id="reader-container"><div id="reader"></div></div>
-                <button class="btn-danger btn-small" onclick="closeScanner()">Стоп камера</button>
-            </div>
-
+            <button class="btn-pri" onclick="startCheckNFC()">💳 Сканировать NFC</button>
+            <button class="btn-sec" onclick="openScanner()">📷 Сканировать QR</button>
+            <div id="scanner-view" class="hidden"><div id="reader"></div><button class="btn-danger btn-small" onclick="closeScanner()">Стоп</button></div>
             <div id="check-result" class="status-box hidden"></div>
         </div>
 
-        <br>
-        <a href="#" onclick="showView('home')" style="color:#888; text-decoration:none; font-size:0.9rem;">← Выход</a>
+        <a href="#" onclick="showView('home')" class="back-link">← Выход</a>
     </div>
 
-    <!-- СКРЫТЫЙ БЛОК КЛИЕНТА (Активируется по хешу #login_CODE) -->
+    <!-- Клиент (Скрытый блок) -->
     <div id="view-client-login" class="hidden">
         <h1>Ваш Пропуск</h1>
-        <p class="subtitle">Покажите этот экран охраннику</p>
-        
         <div id="client-ticket-qr" class="qr-center large-qr"></div>
-        
-        <div class="status-box st-ok" style="text-align:center; margin-top:20px;">
-            ✅ Билет готов!<br>
-            Код: <strong id="client-code-display"></strong>
-        </div>
-        
-        <br>
+        <div class="status-box st-ok" style="text-align:center;">Код: <strong id="client-code-display"></strong></div>
         <button class="btn-sec" onclick="window.close()">Закрыть</button>
     </div>
 </div>
 
 <script src="script.js"></script>
-
 </body>
 </html>
