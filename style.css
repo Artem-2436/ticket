@@ -1,31 +1,251 @@
-:root { --pri:#6a11cb; --sec:#2575fc; --ok:#00b894; --err:#d63031; }
-* { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI',sans-serif; }
-body { background:linear-gradient(135deg,#f0f2f5,#e0eafc); display:flex; justify-content:center; align-items:center; min-height:100vh; color:#333; }
-.container { width:95%; max-width:420px; padding:1.5rem; background:rgba(255,255,255,0.95); backdrop-filter:blur(10px); border-radius:20px; box-shadow:0 10px 30px rgba(0,0,0,0.1); text-align:center; }
-h1 { font-size:1.5rem; margin-bottom:1rem; background:linear-gradient(to right,var(--pri),var(--sec)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-.subtitle { color:#666; font-size:0.9rem; margin-bottom:1.5rem; }
-button { width:100%; padding:12px; margin:5px 0; border:none; border-radius:10px; font-weight:bold; cursor:pointer; transition:0.2s; color:white; }
-.btn-pri { background:linear-gradient(to right,var(--pri),var(--sec)); }
-.btn-sec { background:white; color:var(--pri); border:2px solid var(--pri); }
-.btn-danger { background:var(--err); }
-.btn-success { background:var(--ok); }
-.btn-small { width:auto; padding:5px 10px; font-size:0.8rem; }
-.tab-btn { flex:1; font-size:0.75rem; padding:10px 5px; background:#eee; color:#555; }
-.tab-btn.active { background:linear-gradient(to right,var(--pri),var(--sec)); color:white; }
-.hidden { display:none !important; }
-.status-box { margin-top:10px; padding:10px; border-radius:8px; font-size:0.9rem; font-weight:bold; text-align:left; word-break:break-word; }
-.st-info { background:#eef2ff; color:#4f46e5; }
-.st-ok { background:#dcfce7; color:#166534; }
-.st-err { background:#fee2e2; color:#991b1b; }
-.qr-center { margin:15px auto; padding:10px; background:white; border-radius:8px; display:inline-block; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
-.large-qr canvas,.large-qr img { width:220px!important; height:220px!important; }
-.form-input { width:100%; padding:12px; border:1px solid #ddd; border-radius:8px; margin-bottom:10px; font-size:1rem; }
-.list-container { max-height:250px; overflow-y:auto; text-align:left; margin-top:10px; }
-.item-row { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; background:white; margin-bottom:5px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05); font-size:0.85rem; }
-.item-info strong { display:block; }
-.item-meta { font-family:monospace; color:#888; font-size:0.75rem; }
-.badge { background:var(--pri); color:white; padding:2px 8px; border-radius:10px; font-size:0.8rem; font-weight:bold; }
-#reader { width:100%; border-radius:10px; overflow:hidden; margin-bottom:10px; background:black; aspect-ratio:1/1; }
-.back-link { display:block; margin-top:20px; color:#888; text-decoration:none; font-size:0.9rem; }
+/* === БАЗОВЫЕ НАСТРОЙКИ === */
+:root { 
+    --pri:#6a11cb; 
+    --sec:#2575fc; 
+    --ok:#00b894; 
+    --err:#d63031; 
+    --bg-body: linear-gradient(135deg,#f0f2f5 0%, #e0eafc 100%);
+    --glass-bg: rgba(255, 255, 255, 0.95);
+}
+
+/* Сбрасываем стили аккуратно, не ломая layout */
+html, body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg-body);
+    color: #333; /* Явный цвет текста, чтобы не было белого на белом */
+    -webkit-font-smoothing: antialiased;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+/* === КОНТЕЙНЕР (КАРТОЧКА) === */
+.container {
+    width: 90%;
+    max-width: 420px;
+    padding: 2rem 1.5rem; /* Вернули нормальные отступы внутри карточки */
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 24px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    text-align: center;
+    position: relative;
+    z-index: 10;
+    border: 1px solid rgba(255,255,255,0.8);
+    
+    /* Гарантируем, что контент не схлопнется */
+    min-height: 400px; 
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* === ТИПОГРАФИКА === */
+h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+    line-height: 1.2;
+    background: linear-gradient(to right, var(--pri), var(--sec));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+}
+
+.subtitle {
+    color: #666;
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+}
+
+/* === КНОПКИ === */
+button {
+    width: 100%;
+    padding: 14px;
+    margin: 8px 0;
+    border: none;
+    border-radius: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1rem;
+    color: white;
+    outline: none;
+    box-sizing: border-box; /* Важно для ширины */
+}
+
+.btn-pri { 
+    background: linear-gradient(to right, var(--pri), var(--sec)); 
+    box-shadow: 0 4px 15px rgba(106, 17, 203, 0.3);
+}
+.btn-sec { 
+    background: white; 
+    color: var(--pri); 
+    border: 2px solid var(--pri); 
+}
+.btn-danger { background: var(--err); }
+.btn-success { background: var(--ok); }
+.btn-small { 
+    width: auto; 
+    padding: 6px 12px; 
+    font-size: 0.85rem; 
+    margin: 0 2px;
+    border-radius: 8px;
+}
+
+button:hover { transform: translateY(-2px); filter: brightness(1.05); }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.hidden { display: none !important; }
+
+/* === ТАБЫ (ВКЛАДКИ) === */
+.tab-container {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 20px;
+    background: #f1f2f6;
+    padding: 4px;
+    border-radius: 12px;
+}
+
+.tab-btn {
+    flex: 1;
+    font-size: 0.8rem;
+    padding: 10px 5px;
+    background: transparent;
+    color: #555;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: 0.3s;
+    box-shadow: none;
+}
+
+.tab-btn.active {
+    background: white;
+    color: var(--pri);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* === ФОРМЫ И СПИСКИ === */
+.form-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    font-size: 1rem;
+    box-sizing: border-box;
+    background: #fafafa;
+    transition: 0.2s;
+}
+.form-input:focus { 
+    outline: none; 
+    border-color: var(--pri); 
+    background: white;
+    box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.1);
+}
+
+.list-container {
+    max-height: 250px;
+    overflow-y: auto;
+    text-align: left;
+    margin-top: 15px;
+    padding-right: 5px;
+}
+
+.item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: white;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    font-size: 0.9rem;
+    border-left: 4px solid var(--pri);
+}
+
+.item-info strong { display:block; margin-bottom:2px; }
+.item-meta { font-family: monospace; color: #888; font-size: 0.75rem; }
+
+.badge {
+    background: var(--pri);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.8rem;
+    font-weight: bold;
+}
+
+/* === СТАТУСЫ === */
+.status-box {
+    margin-top: 15px;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    text-align: left;
+    word-break: break-word;
+    animation: fadeIn 0.3s;
+}
+.st-info { background: #eef2ff; color: #4f46e5; border-left: 4px solid #4f46e5; }
+.st-ok { background: #dcfce7; color: #166534; border-left: 4px solid #166534; }
+.st-err { background: #fee2e2; color: #991b1b; border-left: 4px solid #991b1b; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* === QR КОД === */
+.qr-center {
+    margin: 20px auto;
+    padding: 15px;
+    background: white;
+    border-radius: 12px;
+    display: inline-block;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+}
+.large-qr canvas, .large-qr img {
+    width: 220px !important;
+    height: 220px !important;
+    image-rendering: pixelated; /* Четкость пикселей для QR */
+}
+
+/* === КАМЕРА === */
+#reader {
+    width: 100%;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    background: black;
+    aspect-ratio: 1/1;
+    position: relative;
+}
+#reader video { object-fit: cover; width: 100%; height: 100%; }
+
+.back-link {
+    display: block;
+    margin-top: 20px;
+    color: #888;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+.back-link:hover { color: var(--pri); }
+
 .highlight { background-color: #fffbe6 !important; transition: background-color 0.5s; }
-@media(max-width:480px){ .container{padding:1rem;} h1{font-size:1.3rem;} }
+
+/* Адаптив для маленьких экранов */
+@media (max-width: 480px) {
+    .container { padding: 1.5rem 1rem; width: 95%; }
+    h1 { font-size: 1.5rem; }
+    button { padding: 12px; font-size: 0.95rem; }
+}
