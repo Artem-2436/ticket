@@ -15,7 +15,7 @@
     <!-- Главная -->
     <div id="view-home">
         <h1>Xcortex Ticket</h1>
-        <p class="subtitle">Система контроля доступа v6.1</p>
+        <p class="subtitle">Система контроля доступа v6.2</p>
         <button class="btn-pri" onclick="showView('admin')">🛡 Панель Организатора</button>
     </div>
 
@@ -30,10 +30,12 @@
             <button class="tab-btn" id="tab-check" onclick="switchTab('check')">✅ Проверка</button>
         </div>
 
-        <!-- Таб 1: NFC Регистрация -->
+        <!-- Таб 1: NFC Регистрация & Поиск -->
         <div id="panel-nfc-reg" class="tab-panel">
             <input type="text" id="input-name-nfc" class="form-input" placeholder="ФИО Участника">
-            <button class="btn-pri" onclick="startRegisterNFC()">📱 Приложить карту</button>
+            <button class="btn-pri" onclick="startRegisterNFC()">➕ Зарегистрировать карту</button>
+            <button class="btn-sec" onclick="searchUserByNFC()" style="margin-top:5px;">🔍 Найти клиента по карте</button>
+            
             <div id="status-nfc-reg" class="status-box hidden"></div>
             
             <hr style="border:0; height:1px; background:#eee; margin:15px 0;">
@@ -46,15 +48,17 @@
             <div class="user-list" id="users-container"></div>
         </div>
 
-        <!-- Таб 2: QR Регистрация -->
+        <!-- Таб 2: QR Регистрация (Теперь с именем!) -->
         <div id="panel-qr-reg" class="tab-panel hidden">
             <div id="qr-reg-idle">
-                <p style="color:#666; font-size:0.9rem; margin-bottom:10px;">Генерирует одноразовый код для клиента без карты.</p>
+                <p style="color:#666; font-size:0.9rem; margin-bottom:10px;">Введите ФИО, чтобы создать билет.</p>
+                <input type="text" id="input-name-qr" class="form-input" placeholder="ФИО Клиента">
                 <button class="btn-pri" onclick="startRegistrationQR()">🚀 Выдать QR (60 сек)</button>
             </div>
             <div id="qr-reg-active" class="hidden">
                 <div class="timer-box">⏳ Осталось: <span id="reg-timer">60</span> сек.</div>
-                <p style="font-size:0.9rem; color:#666;">Покажите этот код клиенту:</p>
+                <p style="font-size:0.9rem; color:#666;">Клиент: <strong id="qr-client-name-display"></strong></p>
+                <p style="font-size:0.9rem; color:#666;">Покажите этот код:</p>
                 <div id="invite-qr-container" class="qr-center"></div>
                 <div id="qr-reg-status-msg" class="status-box st-info">Код сохранен.</div>
             </div>
