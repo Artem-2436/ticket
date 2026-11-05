@@ -8,20 +8,32 @@ let isScanningActive = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     if(typeof QRCode === 'undefined') alert("Нет интернета для библиотек");
-    showView('home');
+    // Инициализация при загрузке
+    renderNFCList(); 
+    renderAllTickets();
 });
 
 function showView(v) {
-    ['home','admin'].forEach(x=>document.getElementById(`view-${x}`).classList.add('hidden'));
-    document.getElementById(`view-${v}`).classList.remove('hidden');
+    ['home','admin'].forEach(x=>{
+        const el = document.getElementById(`view-${x}`);
+        if(el) el.classList.add('hidden');
+    });
+    
+    const target = document.getElementById(`view-${v}`);
+    if(target) target.classList.remove('hidden');
+    
     if(v!=='admin') stopAll();
 }
 
 function switchTab(t) {
     document.querySelectorAll('.tab-panel').forEach(p=>p.classList.add('hidden'));
-    document.getElementById(`panel-${t}`).classList.remove('hidden');
+    const panel = document.getElementById(`panel-${t}`);
+    if(panel) panel.classList.remove('hidden');
+    
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.getElementById(`tab-${t}`).classList.add('active');
+    const btn = document.getElementById(`tab-${t}`);
+    if(btn) btn.classList.add('active');
+    
     stopAll();
     
     // Обновляем списки при переключении
@@ -245,6 +257,8 @@ function vib(ok){ if(navigator.vibrate) navigator.vibrate(ok?[100]:[200,100,200]
 function renderNFCList() {
     const cont = document.getElementById('nfc-list');
     const cnt = document.getElementById('count-nfc');
+    if(!cont || !cnt) return;
+    
     const users = getNFCUsers();
     cont.innerHTML = ''; cnt.textContent = users.length;
     
@@ -277,11 +291,9 @@ window.toggleBlock = function(uid) {
 function renderAllTickets() {
     const cont = document.getElementById('all-tickets-list');
     const cnt = document.getElementById('count-all');
-    const nfc = getNFCUsers();
+    if(!cont || !cnt) return;
+
     const qr = getQRTickets();
-    
-    // Объединяем для отображения общей статистики или просто показываем оба типа
-    // Для простоты покажем только QR билеты здесь, так как NFC есть во вкладке NFC
     cont.innerHTML = ''; 
     cnt.textContent = qr.length;
     
@@ -312,9 +324,19 @@ function clearAllDB() {
 
 function esc(s) { return s.replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
-// Export
-window.showView=showView; window.switchTab=switchTab;
-window.registerNFC=registerNFC; window.searchNFC=searchNFC;
-window.generateQRTicket=generateQRTicket; window.resetQRForm=resetQRForm;
-window.startCheckNFC=startCheckNFC; window.startScanQR=startScanQR; window.stopScanner=stopScanner;
-window.clearAllDB=clearAllDB; window.toggleBlock=toggleBlock; window.deleteNFCUser=deleteNFCUser;
+// ==========================================
+// !!! ЭКСПОРТ ФУНКЦИЙ В WINDOW !!!
+// Без этого блока кнопки onclick не будут работать
+// ==========================================
+window.showView = showView;
+window.switchTab = switchTab;
+window.registerNFC = registerNFC;
+window.searchNFC = searchNFC;
+window.generateQRTicket = generateQRTicket;
+window.resetQRForm = resetQRForm;
+window.startCheckNFC = startCheckNFC;
+window.startScanQR = startScanQR;
+window.stopScanner = stopScanner;
+window.clearAllDB = clearAllDB;
+window.deleteNFCUser = deleteNFCUser;
+window.toggleBlock = toggleBlock;
