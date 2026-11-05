@@ -1,109 +1,159 @@
-// === НАСТРОЙКИ И СОСТОЯНИЕ ===
+// === НАСТРОЙКИ И ГЛОБАЛЬНОЕ СОСТОЯНИЕ ===
 var KEY_NFC = 'xc_nfc_final';
 var KEY_QR = 'xc_qr_final';
 
-var nfcReader = null;      // Объект считывателя NFC
-var qrScanner = null;      // Объект сканера камеры
-var currentTab = '';       // Текущая активная вкладка ('nfc', 'qr', 'check', 'db')
-var isProcessing = false;  // Флаг защиты от двойных кликов во время операций
+// Хранилище объектов оборудования. 
+// Важно: они должны быть null, когда оборудование свободно.
+var nfcReaderInstance = null; 
+var qrScannerInstance = null; 
+
+// Текущая активная вкладка ('', 'nfc', 'qr', 'check', 'db')
+var currentActiveTab = ''; 
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("Xcortex System Initialized");
+    console.log("Xcortex Engine v2.0 Loaded");
     
-    // Проверка загрузки библиотек
+    // Проверка библиотек
     if(typeof QRCode === 'undefined') {
-        alert("Ошибка: Библиотека QRCode не загружена.");
+        alert("Критическая ошибка: Библиотека QRCode не найдена.");
         return;
     }
     if(typeof Html5Qrcode === 'undefined') {
-        alert("Ошибка: Библиотека Html5Qrcode не загружена.");
+        alert("Критическая ошибка: Библиотека Html5Qrcode не найдена.");
         return;
     }
 
     renderLists();
 });
 
-// --- НАВИГАЦИЯ И ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК ---
-
-function showAdminPanel() {
-    document.getElementById('view-login').style.display = 'none';
-    document.getElementById('view-admin').style.display = 'block';
-    // По умолчанию открываем первую вкладку NFC
-    safeSwitchTo('nfc'); 
-}
-
-function hideAdminPanel() {
-    stopAllScans(true); // Полная очистка при выходе
-    document.getElementById('view-admin').style.display = 'none';
-    document.getElementById('view-login').style.display = 'block';
-    currentTab = ''; 
-}
+// --- ЯДРО НАВИГАЦИИ (БЕЗОПАСНОЕ ПЕРЕКЛЮЧЕНИЕ) ---
 
 /**
- * Универсальная функция безопасного переключения вкладок.
- * Критически важно: сначала останавливаем все процессы, потом меняем UI.
+ * Главная функция переключения.
+ * Логика: СНАЧАЛА стоп железо -> ПОТОМ скрываем старые панели -> ПОТОМ показываем новые.
  */
-function safeSwitchTo(newTabName) {
-    // Защита от повторного входа в ту же вкладку
-    if (currentTab === newTabName && !isProcessing) return;
+function switchTab(targetTabName) {
+    // 1. Защита: если та же вкладка открыта, ничего не делаем
+    if (currentActiveTab === targetTabName) return;
 
-    // 1. ЖЕСТКАЯ ОСТАНОВКА ВСЕХ АППАРАТНЫХ ПРОЦЕССОВ (NFC/Camera)
-    stopAllScans(false); 
+    // 2. ЖЕСТКАЯ ОЧИСТКА РЕСУРСОВ (NFC & CAMERA)
+    // Мы вызываем эту функцию синхронно, она пытается остановить всё максимально быстро
+    hardStopHardware();
 
-    // 2. Определение ID целевой панели
-    var targetPanelId = '';
-    switch(newTabName) {
-        case 'nfc':   targetPanelId = 'panel-nfc'; break;
-        case 'qr':    targetPanelId = 'panel-qr'; break;
-        case 'check': targetPanelId = 'panel-check'; break;
-        case 'db':    targetPanelId = 'panel-db'; break;
-        default: return;
-    }
+    // 3. ОБНОВЛЕНИЕ VISUAL STATE (DOM)
+    var panelsMap = {
+        'nfc': 'panel-nfc',
+        'qr': 'panel-qr',
+        'check': 'panel-check',
+        'db': 'panel-db'
+    };
+    
+    var buttonsMap = {
+        'nfc': 'btn-tab-nfc',
+        'qr': 'btn-tab-qr',
+        'check': 'btn-tab-check',
+        'db': 'btn-tab-db'
+    };
 
-    // 3. Список всех возможных панелей и кнопок для очистки состояния
-    var allPanels = ['panel-nfc', 'panel-qr', 'panel-check', 'panel-db'];
-    var allButtons = ['btn-tab-nfc', 'btn-tab-qr', 'btn-tab-check', 'btn-tab-db'];
-
-    // 4. Скрываем ВСЕ панели
-    allPanels.forEach(function(pid) {
-        var el = document.getElementById(pid);
+    // Скрываем ВСЕ панели
+    Object.values(panelsMap).forEach(function(panelId) {
+        var el = document.getElementById(panelId);
         if(el) el.classList.add('hidden');
     });
 
-    // 5. Убираем статус 'active' со всех кнопок
-    allButtons.forEach(function(bid) {
-        var btn = document.getElementById(bid);
+    // Деактивируем ВСЕ кнопки
+    Object.values(buttonsMap).forEach(function(btnId) {
+        var btn = document.getElementById(btnId);
         if(btn) btn.classList.remove('active');
     });
 
-    // 6. Показываем ЦЕЛЕВУЮ панель
-    var targetEl = document.getElementById(targetPanelId);
-    if (targetEl) {
-        targetEl.classList.remove('hidden');
+    // Показываем ЦЕЛЕВУЮ панель
+    var targetPanelId = panelsMap[targetTabName];
+    if(targetPanelId) {
+        var targetEl = document.getElementById(targetPanelId);
+        if(targetEl) targetEl.classList.remove('hidden');
     }
 
-    // 7. Активируем соответствующую кнопку
-    var targetBtnId = 'btn-tab-' + newTabName;
-    var targetBtn = document.getElementById(targetBtnId);
-    if (targetBtn) {
-        targetBtn.classList.add('active');
+    // Активируем ЦЕЛЕВУЮ кнопку
+    var targetBtnId = buttonsMap[targetTabName];
+    if(targetBtnId) {
+        var targetBtn = document.getElementById(targetBtnId);
+        if(targetBtn) targetBtn.classList.add('active');
     }
 
-    // 8. Обновляем трекер текущей вкладки
-    currentTab = newTabName;
+    // Обновляем состояние
+    currentActiveTab = targetTabName;
 
-    // 9. Специфичные действия после переключения
-    if(newTabName === 'db') {
+    // Специфичные действия
+    if(targetTabName === 'db') {
         renderLists();
     }
 }
 
 // Обертки для HTML onclick
-function openTabNFC() { safeSwitchTo('nfc'); }
-function openTabQR() { safeSwitchTo('qr'); }
-function openTabCheck() { safeSwitchTo('check'); }
-function openTabDB() { safeSwitchTo('db'); }
+function openTabNFC() { switchTab('nfc'); }
+function openTabQR() { switchTab('qr'); }
+function openTabCheck() { switchTab('check'); }
+function openTabDB() { switchTab('db'); }
 
+function showAdminPanel() {
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('view-admin').style.display = 'block';
+    switchTab('nfc'); 
+}
+
+function hideAdminPanel() {
+    hardStopHardware(); // Стоп железа перед выходом
+    document.getElementById('view-admin').style.display = 'none';
+    document.getElementById('view-login').style.display = 'block';
+    currentActiveTab = ''; 
+}
+
+/**
+ * Функция принудительной остановки всех аппаратных модулей.
+ * Вызывается при любом переключении вкладок или выходе.
+ * Не использует await/Promise chains для изменения DOM, чтобы избежать зависаний UI.
+ */
+function hardStopHardware() {
+    // 1. STOP NFC
+    if (nfcReaderInstance) {
+        try {
+            // Пытаемся остановить скан. Если ошибка (уже остановлен/нет доступа) - игнорируем.
+            nfcReaderInstance.stopScan().catch(function(err) {
+                console.warn("NFC stop warning:", err);
+            });
+        } catch (e) {
+            console.error("NFC exception during stop:", e);
+        } finally {
+            // ГАРАНТИРОВАННО обнуляем ссылку, чтобы GC освободил память
+            nfcReaderInstance = null; 
+        }
+    }
+
+    // 2. STOP CAMERA
+    if (qrScannerInstance) {
+        try {
+            // Метод stop() возвращает Promise. 
+            // Мы НЕ ждем его завершения для смены вкладки, иначе UI зависнет.
+            // Вместо этого мы немедленно убираем видео из DOM ниже.
+            qrScannerInstance.stop().catch(function(err) {
+                console.warn("Camera stop warning:", err);
+            });
+        } catch (e) {
+            console.error("Camera exception during stop:", e);
+        } finally {
+            // ГАРАНТИРОВАННО обнуляем ссылку
+            qrScannerInstance = null;
+            
+            // Немедленно чистим DOM камеры, чтобы браузер отпустил поток
+            var camView = document.getElementById('cam-view');
+            var readerDiv = document.getElementById('reader-element');
+            
+            if(camView) camView.classList.add('hidden');
+            if(readerDiv) readerDiv.innerHTML = ''; 
+        }
+    }
+}
 
 // --- БАЗА ДАННЫХ (LocalStorage Helpers) ---
 
@@ -114,7 +164,8 @@ function getNFCUsers() {
 
 function saveNFCUser(user) { 
     var list = getNFCUsers(); 
-    var exists = list.some(u => u.uid === user.uid);
+    // Оптимизированная проверка существования
+    var exists = list.some(item => item.uid === user.uid);
     if(!exists) { 
         list.push(user); 
         localStorage.setItem(KEY_NFC, JSON.stringify(list)); 
@@ -123,12 +174,12 @@ function saveNFCUser(user) {
 
 function findNFCUser(uid) { 
     var list = getNFCUsers();
-    return list.find(u => u.uid === uid) || null;
+    return list.find(item => item.uid === uid) || null;
 }
 
 function deleteNFCUser(uid) { 
-    if(confirm("Удалить этого пользователя?")) {
-        var list = getNFCUsers().filter(u => u.uid !== uid);
+    if(confirm("Удалить пользователя?")) {
+        var list = getNFCUsers().filter(item => item.uid !== uid);
         localStorage.setItem(KEY_NFC, JSON.stringify(list)); 
         renderLists(); 
     }
@@ -141,7 +192,7 @@ function getQRTickets() {
 
 function saveQRTicket(ticket) { 
     var list = getQRTickets(); 
-    var exists = list.some(t => t.code === ticket.code);
+    var exists = list.some(item => item.code === ticket.code);
     if(!exists) { 
         list.push(ticket); 
         localStorage.setItem(KEY_QR, JSON.stringify(list)); 
@@ -150,84 +201,82 @@ function saveQRTicket(ticket) {
 
 function findQRTicket(code) { 
     var list = getQRTickets();
-    return list.find(t => t.code === code) || null;
+    return list.find(item => item.code === code) || null;
 }
 
 function markTicketUsed(code) {
     var list = getQRTickets();
-    var idx = list.findIndex(t => t.code === code);
-    if(idx > -1) {
-        list[idx].used = true;
+    var index = list.findIndex(item => item.code === code);
+    if(index > -1) {
+        list[index].used = true;
         localStorage.setItem(KEY_QR, JSON.stringify(list));
     }
 }
-
 // --- ЛОГИКА NFC РЕГИСТРАЦИИ И ПОИСКА ---
 
 function doRegisterNFC() {
-    if(isProcessing) return; // Защита от многократных запусков
-    
     var nameInput = document.getElementById('in-nfc-name');
     var msgEl = document.getElementById('msg-nfc');
     var name = nameInput.value.trim();
     
     if(!name) { alert("Введите ФИО!"); return; }
-    if(!('NDEFReader' in window)) { alert("Web NFC не поддерживается этим браузером."); return; }
+    if(!('NDEFReader' in window)) { alert("Web NFC не поддерживается этим устройством."); return; }
 
-    isProcessing = true;
-    showMsg(msgEl, "Приложите карту к телефону...", "info");
+    // Проверяем, не занят ли уже ридер (на всякий случай)
+    if(nfcReaderInstance) {
+        hardStopHardware();
+    }
+
+    showMsg(msgEl, "Приложите карту...", "info");
 
     try {
-        nfcReader = new NDEFReader();
-        nfcReader.scan().then(function() {
-            nfcReader.onreading = function(event) {
-                // Получаем UID (если доступен)
+        // Создаем новый экземпляр каждый раз, чтобы избежать залипания состояния
+        nfcReaderInstance = new NDEFReader();
+        
+        nfcReaderInstance.scan().then(function() {
+            nfcReaderInstance.onreading = function(event) {
                 var uid = event.serialNumber ? event.serialNumber.toLowerCase() : "";
                 
                 if(!uid) { 
-                    showMsg(msgEl, "❌ Ошибка: Браузер скрыл UID карты.", "err"); 
-                    cleanupNFC(); 
+                    showMsg(msgEl, "❌ UID недоступен", "err"); 
+                    cleanupNFCOperation(); 
                     return; 
                 }
                 
                 if(findNFCUser(uid)) { 
-                    showMsg(msgEl, "⚠️ Карта уже зарегистрирована!", "err"); 
-                    cleanupNFC(); 
+                    showMsg(msgEl, "⚠️ Карта уже есть!", "err"); 
+                    cleanupNFCOperation(); 
                     return; 
                 }
                 
                 saveNFCUser({uid: uid, name: name, time: Date.now()});
-                showMsg(msgEl, "✅ Успешно! Имя: " + name, "ok");
+                showMsg(msgEl, "✅ Успех: " + name, "ok");
                 nameInput.value = '';
                 renderLists();
-                cleanupNFC();
+                cleanupNFCOperation();
             };
-            
-            // Таймаут ожидания сканирования (опционально, можно убрать если мешает)
-            // setTimeout(() => { if(isProcessing) { showMsg(msgEl, "Тайм-аут. Попробуйте снова.", "err"); cleanupNFC(); } }, 15000);
-
         }).catch(function(err) {
-            showMsg(msgEl, "Ошибка запуска NFC: " + err.message, "err");
-            isProcessing = false;
+            showMsg(msgEl, "Ошибка NFC: " + err.message, "err");
+            cleanupNFCOperation();
         });
     } catch(err) {
-        showMsg(msgEl, "Ошибка: " + err.message, "err");
-        isProcessing = false;
+        showMsg(msgEl, "Системная ошибка: " + err.message, "err");
+        cleanupNFCOperation();
     }
 }
 
 function doSearchNFC() {
-    if(isProcessing) return;
     var msgEl = document.getElementById('msg-nfc');
-    if(!('NDEFReader' in window)) { alert("Web NFC не поддерживается."); return; }
+    if(!('NDEFReader' in window)) { alert("NFC не поддерживается."); return; }
     
-    isProcessing = true;
-    showMsg(msgEl, "Ищем клиента... Приложите карту.", "info");
+    if(nfcReaderInstance) hardStopHardware();
+
+    showMsg(msgEl, "Поиск клиента...", "info");
     
     try {
-        nfcReader = new NDEFReader();
-        nfcReader.scan().then(function() {
-            nfcReader.onreading = function(event) {
+        nfcReaderInstance = new NDEFReader();
+        nfcReaderInstance.scan().then(function() {
+            nfcReaderInstance.onreading = function(event) {
                 var uid = event.serialNumber ? event.serialNumber.toLowerCase() : "";
                 var user = findNFCUser(uid);
                 
@@ -235,17 +284,27 @@ function doSearchNFC() {
                     showMsg(msgEl, "✅ Найден: " + user.name, "ok");
                     highlightListItem(uid);
                 } else {
-                    showMsg(msgEl, "❌ Клиент не найден в базе.", "err");
+                    showMsg(msgEl, "❌ Не найден.", "err");
                 }
-                cleanupNFC();
+                cleanupNFCOperation();
             };
         }).catch(function(err) { 
-            showMsg(msgEl, "Ошибка поиска: " + err.message, "err"); 
-            isProcessing = false;
+            showMsg(msgEl, "Ошибка поиска", "err"); 
+            cleanupNFCOperation();
         });
     } catch(err) { 
-        showMsg(msgEl, "Ошибка системы", "err"); 
-        isProcessing = false;
+        showMsg(msgEl, "Ошибка", "err"); 
+        cleanupNFCOperation();
+    }
+}
+
+// Внутренняя очистка после успешного или неудачного чтения NFC
+function cleanupNFCOperation() {
+    if(nfcReaderInstance) {
+        try {
+            nfcReaderInstance.stopScan().catch(function(){});
+        } catch(e){}
+        nfcReaderInstance = null;
     }
 }
 
@@ -265,28 +324,18 @@ function highlightListItem(uid) {
     }
 }
 
-// Внутренняя очистка NFC ресурсов
-function cleanupNFC() {
-    if(nfcReader) {
-        nfcReader.stopScan().catch(function(){});
-        nfcReader = null;
-    }
-    isProcessing = false;
-}
-
 // --- ЛОГИКА QR ГЕНЕРАЦИИ ---
 
 function doGenerateQR() {
     var nameInput = document.getElementById('in-qr-name');
     var name = nameInput.value.trim();
-    if(!name) { alert("Введите ФИО клиента!"); return; }
+    if(!name) { alert("Введите имя!"); return; }
 
     var code;
-    var isUnique = false;
-    // Генерация уникального кода
-    while(!isUnique) {
+    var unique = false;
+    while(!unique) {
         code = Math.floor(100000 + Math.random() * 900000).toString();
-        if(!findQRTicket(code)) isUnique = true;
+        if(!findQRTicket(code)) unique = true;
     } 
 
     saveQRTicket({code: code, name: name, used:false, time:Date.now()});
@@ -316,95 +365,94 @@ function doResetQR() {
 // --- ЛОГИКА ПРОВЕРКИ ВХОДА (CHECK TAB) ---
 
 function doCheckNFC() {
-    if(isProcessing) return;
     var msgEl = document.getElementById('msg-check');
-    if(!('NDEFReader' in window)) { alert("Web NFC не поддерживается."); return; }
+    if(!('NDEFReader' in window)) { alert("NFC не поддерживается."); return; }
     
-    isProcessing = true;
+    if(nfcReaderInstance) hardStopHardware();
+
     showMsg(msgEl, "Жду карту посетителя...", "info");
     
     try {
-        nfcReader = new NDEFReader();
-        nfcReader.scan().then(function() {
-            nfcReader.onreading = function(event) {
+        nfcReaderInstance = new NDEFReader();
+        nfcReaderInstance.scan().then(function() {
+            nfcReaderInstance.onreading = function(event) {
                 var uid = event.serialNumber ? event.serialNumber.toLowerCase() : "";
                 var user = findNFCUser(uid);
                 
                 if(user) {
-                    showMsg(msgEl, "✅ ДОСТУП РАЗРЕШЕН<br>Здравствуйте, " + user.name + "!", "ok");
+                    showMsg(msgEl, "✅ ДОСТУП РАЗРЕШЕН<br>" + user.name, "ok");
                     vib(true);
                 } else {
-                    showMsg(msgEl, "❌ ОТКАЗАНО<br>Карта не найдена в базе.", "err");
+                    showMsg(msgEl, "❌ ОТКАЗАНО<br>Нет в базе.", "err");
                     vib(false);
                 }
-                cleanupNFC();
+                cleanupNFCOperation();
             };
         }).catch(function(err) { 
-            showMsg(msgEl, "Ошибка NFC: " + err.message, "err"); 
-            isProcessing = false;
+            showMsg(msgEl, "Ошибка NFC", "err"); 
+            cleanupNFCOperation();
         });
     } catch(err) { 
         showMsg(msgEl, "Ошибка системы", "err"); 
-        isProcessing = false;
+        cleanupNFCOperation();
     }
 }
 
 function doStartCamera() {
-    if(isProcessing) return;
-    
+    // Если камера уже запущена (редкость, но защита), сначала стоп
+    if(qrScannerInstance) {
+        hardStopHardware();
+    }
+
     var camView = document.getElementById('cam-view');
     var msgEl = document.getElementById('msg-check');
     
     camView.classList.remove('hidden');
     msgEl.classList.add('hidden');
     
-    isProcessing = true;
-    
-    // Создаем экземпляр сканера
-    qrScanner = new Html5Qrcode("reader-element");
-    
-    qrScanner.start(
-        { facingMode: "environment" }, 
-        { fps: 10, qrbox: 150 }, 
-        onQrSuccess, 
-        onQrFail
-    ).catch(function(e) { 
-        alert("Ошибка доступа к камере: " + e); 
-        doStopCamera(); 
-    });
-}
-
-function doStopCamera() {
-    if(qrScanner) {
-        var scannerRef = qrScanner; // Сохраняем ссылку, чтобы избежать гонок данных
+    try {
+        qrScannerInstance = new Html5Qrcode("reader-element");
         
-        // Пробуем остановить. Важно дождаться Promise, чтобы освободить камеру
-        scannerRef.stop().then(function() {
-            finishCameraCleanup(scannerRef);
-        }).catch(function() {
-            // Если ошибка при остановке, всё равно чистим DOM
-            finishCameraCleanup(scannerRef);
+        qrScannerInstance.start(
+            { facingMode: "environment" }, 
+            { fps: 10, qrbox: 150 }, 
+            onQrSuccess, 
+            onQrFail
+        ).catch(function(e) { 
+            alert("Ошибка камеры: " + e); 
+            // При ошибке запуска тоже нужно почиститься
+            if(qrScannerInstance) {
+                 try{ qrScannerInstance.stop(); }catch(ex){}
+                 qrScannerInstance = null;
+            }
+            camView.classList.add('hidden');
         });
-    } else {
-        finishCameraCleanup(null);
+    } catch(e) {
+        alert("Критическая ошибка инициализации камеры");
+        if(qrScannerInstance) qrScannerInstance = null;
+        camView.classList.add('hidden');
     }
 }
 
-// Вспомогательная функция для гарантированной очистки камеры
-function finishCameraCleanup(scannerObj) {
-    var camView = document.getElementById('cam-view');
-    var readerDiv = document.getElementById('reader-element');
-    
-    if(camView) camView.classList.add('hidden');
-    if(readerDiv) readerDiv.innerHTML = ''; // Удаляем видео поток из DOM
-    
-    qrScanner = null;
-    isProcessing = false;
+function doStopCamera() {
+    // Эта кнопка вызывает ручную остановку, но логику очистки выносим в hardStopHardware
+    // чтобы код был единым источником правды
+    hardStopHardware();
 }
 
 function onQrSuccess(decodedText) {
-    // Немедленно останавливаем камеру, чтобы не спамить событиями
-    doStopCamera(); 
+    // 1. Немедленно останавливаем камеру, чтобы прекратить цикл обработки кадров
+    // Используем прямую остановку экземпляра, так как мы знаем, что он существует
+    if(qrScannerInstance) {
+        qrScannerInstance.stop().catch(function(){});
+        qrScannerInstance = null; // Обнуляем сразу
+        
+        // Чистим DOM вручную здесь же, не дожидаясь next tick
+        var camView = document.getElementById('cam-view');
+        var readerDiv = document.getElementById('reader-element');
+        if(camView) camView.classList.add('hidden');
+        if(readerDiv) readerDiv.innerHTML = '';
+    }
     
     var msgEl = document.getElementById('msg-check');
     msgEl.classList.remove('hidden');
@@ -415,10 +463,10 @@ function onQrSuccess(decodedText) {
         var ticket = findQRTicket(code);
         
         if(!ticket) {
-            showMsg(msgEl, "❌ НЕВЕРНЫЙ КОД<br>Такого билета нет в базе.", "err"); 
+            showMsg(msgEl, "❌ НЕВЕРНЫЙ КОД", "err"); 
             vib(false);
         } else if(ticket.used) {
-            showMsg(msgEl, "⛔ УЖЕ ИСПОЛЬЗОВАН<br>(" + ticket.name + ")", "err"); 
+            showMsg(msgEl, "⛔ УЖЕ ИСПОЛЬЗОВАН (" + ticket.name + ")", "err"); 
             vib(false);
         } else {
             markTicketUsed(ticket.code);
@@ -427,12 +475,12 @@ function onQrSuccess(decodedText) {
             renderLists(); 
         }
     } else {
-        showMsg(msgEl, "❌ НЕ НАШ ФОРМАТ<br>Это не Xcortex билет.", "err");
+        showMsg(msgEl, "❌ НЕ НАШ ФОРМАТ", "err");
     }
 }
 
 function onQrFail(error) {
-    // Игнорируем временные ошибки распознавания, пока не будет success или manual stop
+    // Игнорируем ошибки распознавания отдельных кадров
 }
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
@@ -445,31 +493,6 @@ function showMsg(element, text, type) {
     if(type === 'err') element.classList.add('msg-err');
     if(type === 'info') element.classList.add('msg-info');
     element.classList.remove('hidden');
-}
-
-// Главная функция остановки всего. Вызывается при смене таба или выходе.
-// forceClear: true - полная очистка (выход), false - мягкая (смена таба)
-function stopAllScans(forceClear) {
-    // 1. Останавливаем NFC
-    if(nfcReader) {
-        nfcReader.stopScan().catch(function(){});
-        nfcReader = null;
-    }
-    
-    // 2. Останавливаем Камеру
-    if(qrScanner) {
-        // Используем наш безопасный метод остановки
-        doStopCamera();
-    } else {
-        // Если qrScanner был null, но DOM элементы остались (баг прошлого раза)
-        var camView = document.getElementById('cam-view');
-        var readerDiv = document.getElementById('reader-element');
-        if(camView) camView.classList.add('hidden');
-        if(readerDiv) readerDiv.innerHTML = '';
-    }
-    
-    // 3. Сбрасываем флаг занятости
-    isProcessing = false;
 }
 
 function vib(success) { 
@@ -505,7 +528,6 @@ function renderLists() {
         div.className = 'list-item';
         div.setAttribute('data-id', user.uid);
         
-        // Безопасное формирование HTML строки
         var infoHtml = '<div class="item-info"><strong>' + escapeHtml(user.name) + '</strong><span class="item-meta">' + escapeHtml(user.uid) + '</span></div>';
         var btnHtml = '<button class="btn-danger btn-small" onclick="deleteNFCUser(\'' + user.uid + '\')">✖</button>';
         
@@ -544,7 +566,7 @@ function renderLists() {
 }
 
 function doWipeDB() {
-    if(confirm("ВНИМАНИЕ: Вы уверены, что хотите удалить ВСЮ базу данных?\nЭто действие необратимо.")) {
+    if(confirm("Удалить ВСЮ базу? Это необратимо.")) {
         localStorage.removeItem(KEY_NFC);
         localStorage.removeItem(KEY_QR);
         renderLists();
