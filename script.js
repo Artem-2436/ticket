@@ -1,64 +1,238 @@
 // === CONFIGURATION ===
-// ВАЖНО: Измени этот ключ на свой уникальный секрет перед публикацией!
-const SECRET_KEY = "XcortexSecureKey_2026_Artem_ChangeMe"; 
+const BASE_URL = "https://artem-2436.github.io/ticket/"; // Замени на свой реальный URL
+const STORAGE_KEY = 'xcortex_valid_codes'; // Ключ для хранения активных кодов в базе админа
 
-// STATE MANAGEMENT
-let DB = []; // Array of users: [{ uid: string, name: string, status: 'active'|'blocked', addedAt: number }]
-let nfcReader = null;
+// STATE
+let regTimerInterval = null;
+let currentRegCode = null;
 let html5QrCode = null;
-let isScanningActive = false;
 
 // INITIALIZATION
 window.onload = function() {
-    loadDB();
-    renderUsers();
+    checkHashAndRoute();
 };
 
-// --- DATA PERSISTENCE (LocalStorage) ---
+// --- ROUTING LOGIC ---
 
-function loadDB() {
-    try {
-        const saved = localStorage.getItem('xcortex_db_v3');
-        if (saved) {
-            DB = JSON.parse(saved);
-        }
-    } catch(e) { 
-        console.error("Error loading DB:", e);
-        DB = []; 
+function checkHashAndRoute() {
+    const hash = window.location.hash;
+    
+    // Проверка: Мы находимся в режиме клиента? (#login_123456)
+    if (hash.startsWith('#login_')) {
+        const code = hash.replace('#login_', '');
+        renderClientLogin(code);
+    } else {
+        // Обычный режим (Главная или Админ)
+        showView('home');
     }
 }
 
-function saveDB() {
-    localStorage.setItem('xcortex_db_v3', JSON.stringify(DB));
-    renderUsers();
-}
-
-// --- NAVIGATION & UI CONTROL ---
-
 function showView(viewName) {
-    ['home', 'admin'].forEach(v => {
+    ['home', 'admin', 'client-login'].forEach(v => {
         document.getElementById(`view-${v}`).classList.add('hidden');
     });
     document.getElementById(`view-${viewName}`).classList.remove('hidden');
     
-    if (viewName !== 'admin') {
-        stopAllScans();
-    } else {
-        loadDB(); // Refresh data when entering admin panel
-    }
+    if (viewName !== 'admin') stopAllScans();
 }
 
 function switchTab(tab) {
-    // Hide panels
     document.getElementById('panel-reg').classList.toggle('hidden', tab !== 'reg');
     document.getElementById('panel-check').classList.toggle('hidden', tab !== 'check');
-    
-    // Update buttons styling
     document.getElementById('tab-reg').className = tab === 'reg' ? 'btn-pri' : 'btn-sec';
     document.getElementById('tab-check').className = tab === 'check' ? 'btn-pri' : 'btn-sec';
-    
-    // Stop any active scanners when switching tabs
     stopAllScans();
+}
+
+// --- DATABASE HELPERS (LocalStorage for Admin) ---
+
+function getValidCodes() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch(e) {
+        return [];
+    }
+}
+
+function saveValidCode(code) {
+    let codes = getValidCodes();
+    if (!codes.includes(code)) {
+        codes.push(code);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(codes));
+    }
+}
+
+function removeValidCode(code) {
+    let codes = getValidCodes();
+    codes = codes.filter(c => c !== code);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(codes));
+}
+
+function isCodeValid(code) {
+    const codes = getValidCodes();
+    return codes.includes(code);
+}
+
+// --- ADMIN LOGIC: REGISTRATION ---
+
+function startRegistration() {
+    // 1. Generate 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    currentRegCode = code;
+
+    // 2. SAVE TO ADMIN'S LOCALSTORAGE IMMEDIATELY
+    saveValidCode(code);
+    console.log("Saved code to DB:", code);
+
+    // 3. Prepare UI
+    document.getElementById('reg-idle').classList.add('hidden');
+    document.getElementById('reg-active').classList.remove('hidden');
+    
+    const statusEl = document.getElementById('reg-status-msg');
+    statusEl.className = 'status-box st-info';
+    statusEl.innerHTML = `Ожидание сканирования...<br><small>Код ${code} сохранен в базе.</small>`;
+
+    // 4. Create Invite Link
+    // Формат: https://site/#login_CODE
+    const inviteLink = `${BASE_URL}#login_${code}`;
+
+    // 5. Render Big QR
+    const qrContainer = document.getElementById('invite-qr-container');
+    qrContainer.innerHTML = '';
+    new QRCode(qrContainer, {
+        text: inviteLink,
+        width: 200,
+        height: 200,
+        colorDark : "#000000",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.M
+    });
+
+    // 6. Start Timer (Visual only, code stays in DB until used or manually cleared)
+    startRegTimer(60);
+}
+
+function startRegTimer(seconds) {
+    clearInterval(regTimerInterval);
+    let timeLeft = seconds;
+    const timerDisplay = document.getElementById('reg-timer');
+    
+    regTimerInterval = setInterval(() => {
+        timeLeft--;
+        timerDisplay.textContent = timeLeft;
+        
+        if (timeLeft <= 0) {
+            clearInterval(regTimerInterval);
+            expireRegistration();
+        }
+    }, 1000);
+}
+
+function expireRegistration() {
+    // Опционально: удалить код из базы, если время вышло и никто не просканировал
+    // Но лучше оставить, пока админ не нажмет "Новая регистрация", чтобы дать шанс опоздавшим
+    const statusEl = document.getElementById('reg-status-msg');
+    statusEl.className = 'status-box st-warn';
+    statusEl.innerHTML = "⏳ Время истекло.<br>Если клиент еще здесь, нажмите 'Новая регистрация'.<br><small>Код все еще активен в базе.</small>";
+}
+
+// --- CLIENT LOGIC (Hidden Block) ---
+
+function renderClientLogin(code) {
+    // This runs on the CLIENT'S PHONE
+    
+    // Show Client View
+    document.getElementById('view-home').classList.add('hidden');
+    document.getElementById('view-client-login').classList.remove('hidden');
+    
+    // Display Code Text
+    document.getElementById('client-code-display').textContent = code;
+
+    // Generate Small QR containing just the code string for easy scanning by admin
+    // We use a prefix so admin knows what it is: "XC_TICKET:CODE"
+    const ticketData = `XC_TICKET:${code}`;
+    
+    const qrContainer = document.getElementById('client-ticket-qr');
+    qrContainer.innerHTML = '';
+    new QRCode(qrContainer, {
+        text: ticketData,
+        width: 250,
+        height: 250,
+        colorDark : "#000000",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+    });
+}
+
+// --- ADMIN LOGIC: CHECK ENTRY ---
+
+function openScanner() {
+    document.getElementById('scanner-view').classList.remove('hidden');
+    document.getElementById('check-result').classList.add('hidden');
+
+    html5QrCode = new Html5Qrcode("reader");
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanFailure)
+        .catch(err => {
+            alert("Ошибка камеры: " + err);
+            closeScanner();
+        });
+}
+
+function closeScanner() {
+    if (html5QrCode) {
+        html5QrCode.stop().then(() => {
+            document.getElementById('scanner-view').classList.add('hidden');
+        }).catch(()=>{
+             document.getElementById('scanner-view').classList.add('hidden');
+        });
+    }
+}
+
+function onScanSuccess(decodedText, decodedResult) {
+    closeScanner();
+    const resultEl = document.getElementById('check-result');
+    resultEl.classList.remove('hidden');
+    resultEl.className = 'status-box st-info';
+    resultEl.textContent = "Проверка...";
+
+    try {
+        // Expected format: XC_TICKET:123456
+        if (!decodedText.startsWith('XC_TICKET:')) {
+            throw new Error("Неизвестный формат билета");
+        }
+
+        const code = decodedText.split(':')[1];
+        
+        // CHECK AGAINST ADMIN'S LOCALSTORAGE
+        if (isCodeValid(code)) {
+            resultEl.className = 'status-box st-ok';
+            resultEl.innerHTML = `✅ ДОСТУП РАЗРЕШЕН<br>Код: <strong>${code}</strong>`;
+            vibrate(true);
+            
+            // Optional: Remove code after successful entry (One-time use)
+            // removeValidCode(code); 
+            
+        } else {
+            resultEl.className = 'status-box st-err';
+            resultEl.innerHTML = `❌ ОТКАЗАНО<br>Код ${code} не найден в базе.`;
+            vibrate(false);
+        }
+
+    } catch (e) {
+        resultEl.className = 'status-box st-err';
+        resultEl.textContent = "❌ ОШИБКА ЧТЕНИЯ: " + e.message;
+        vibrate(false);
+    }
+}
+
+function onScanFailure(error) {}
+
+function stopAllScans() {
+    closeScanner();
+    clearInterval(regTimerInterval);
 }
 
 function vibrate(success) {
@@ -67,321 +241,3 @@ function vibrate(success) {
         else navigator.vibrate([200, 100, 200]);
     }
 }
-
-function escapeHtml(text) {
-    return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-// --- NFC LOGIC ---
-
-async function startRegisterScan() {
-    const nameInput = document.getElementById('input-name').value.trim();
-    if (!nameInput) {
-        alert("Введите ФИО участника!");
-        return;
-    }
-
-    if (!('NDEFReader' in window)) {
-        alert("Web NFC не поддерживается этим браузером.\nИспользуйте Chrome на Android.");
-        return;
-    }
-
-    const statusEl = document.getElementById('reg-status');
-    statusEl.classList.remove('hidden');
-    statusEl.className = 'status-box st-info';
-    statusEl.textContent = "Приложите карту к телефону...";
-
-    try {
-        // Create new reader instance to avoid state issues
-        nfcReader = new NDEFReader();
-        await nfcReader.scan();
-        isScanningActive = true;
-        
-        nfcReader.onreading = event => {
-            let uid = event.serialNumber;
-            
-            if (!uid || uid === "") {
-                statusEl.className = 'status-box st-err';
-                statusEl.textContent = "❌ Ошибка: Браузер скрыл UID. Попробуйте другой телефон или перезагрузите страницу.";
-                stopScan();
-                return;
-            }
-
-            uid = uid.toLowerCase();
-
-            // Check duplicate
-            if (DB.some(u => u.uid === uid)) {
-                statusEl.className = 'status-box st-warn';
-                statusEl.textContent = `⚠️ Карта уже зарегистрирована!\nUID: ${uid}`;
-                stopScan();
-                return;
-            }
-
-            // Save User
-            const newUser = {
-                uid: uid,
-                name: nameInput,
-                status: 'active',
-                addedAt: Date.now()
-            };
-            
-            DB.push(newUser);
-            saveDB();
-            
-            statusEl.className = 'status-box st-ok';
-            statusEl.innerHTML = `✅ Успешно!<br>Имя: ${nameInput}<br>UID: ${uid}`;
-            vibrate(true);
-            
-            // Clear input
-            document.getElementById('input-name').value = '';
-            stopScan();
-        };
-
-        nfcReader.onerror = err => {
-            statusEl.className = 'status-box st-err';
-            statusEl.textContent = "Ошибка NFC: " + err.name;
-            stopScan();
-        };
-
-    } catch (err) {
-        statusEl.className = 'status-box st-err';
-        statusEl.textContent = "Не удалось запустить сканер: " + err.message;
-        isScanningActive = false;
-    }
-}
-
-async function startCheckNFC() {
-    if (!('NDEFReader' in window)) {
-        alert("Web NFC не поддерживается.");
-        return;
-    }
-
-    const resultEl = document.getElementById('check-result');
-    resultEl.classList.remove('hidden');
-    resultEl.className = 'status-box st-info';
-    resultEl.textContent = "Приложите карту посетителя...";
-
-    try {
-        nfcReader = new NDEFReader();
-        await nfcReader.scan();
-        isScanningActive = true;
-        
-        nfcReader.onreading = event => {
-            let uid = event.serialNumber?.toLowerCase();
-            
-            if (!uid) {
-                resultEl.className = 'status-box st-err';
-                resultEl.textContent = "❌ Не удалось прочитать UID.";
-                stopScan();
-                return;
-            }
-
-            const user = DB.find(u => u.uid === uid);
-
-            if (!user) {
-                resultEl.className = 'status-box st-err';
-                resultEl.textContent = `❌ ОТКАЗАНО\nКарта не найдена в базе.\nUID: ${uid}`;
-                vibrate(false);
-            } else if (user.status === 'blocked') {
-                resultEl.className = 'status-box st-err';
-                resultEl.textContent = `🚫 ДОСТУП ЗАКРЫТ\nПользователь заблокирован.\n${user.name}`;
-                vibrate(false);
-            } else {
-                resultEl.className = 'status-box st-ok';
-                resultEl.innerHTML = `✅ ДОСТУП РАЗРЕШЕН<br>Здравствуйте, <strong>${user.name}</strong>!`;
-                vibrate(true);
-            }
-            stopScan();
-        };
-    } catch (err) {
-        resultEl.className = 'status-box st-err';
-        resultEl.textContent = "Ошибка: " + err.message;
-        isScanningActive = false;
-    }
-}
-
-function stopScan() {
-    if (nfcReader && isScanningActive) {
-        nfcReader.stopScan().catch(()=>{});
-        isScanningActive = false;
-    }
-}
-
-function stopAllScans() {
-    stopScan();
-    closeQrScanner();
-}
-
-// --- QR CODE LOGIC (GENERATION & VERIFICATION) ---
-
-function openQrScanner() {
-    document.getElementById('camera-view').classList.remove('hidden');
-    const resultEl = document.getElementById('check-result');
-    resultEl.classList.add('hidden');
-
-    html5QrCode = new Html5Qrcode("reader");
-    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-    html5QrCode.start({ facingMode: "environment" }, config, onQrSuccess, onQrFailure)
-        .catch(err => {
-            alert("Ошибка камеры: " + err);
-            closeQrScanner();
-        });
-}
-
-function closeQrScanner() {
-    if (html5QrCode) {
-        html5QrCode.stop().then(() => {
-            document.getElementById('camera-view').classList.add('hidden');
-        }).catch(()=>{
-             document.getElementById('camera-view').classList.add('hidden');
-        });
-    }
-}
-
-function onQrSuccess(decodedText, decodedResult) {
-    closeQrScanner();
-    const resultEl = document.getElementById('check-result');
-    resultEl.classList.remove('hidden');
-    resultEl.className = 'status-box st-info';
-    resultEl.textContent = "Анализ QR...";
-
-    try {
-        // Format expected: PAYLOAD.SIGNATURE
-        // PAYLOAD = UID|TIMESTAMP
-        const parts = decodedText.split('.');
-        if (parts.length !== 2) throw new Error("Invalid format");
-        
-        const payload = parts[0];
-        const sig = parts[1];
-        
-        // Verify Signature using HMAC-SHA256
-        const calcSig = CryptoJS.HmacSHA256(payload, SECRET_KEY).toString(CryptoJS.enc.Hex);
-        if (sig !== calcSig) {
-            resultEl.className = 'status-box st-err';
-            resultEl.textContent = "❌ ПОДДЕЛЬНЫЙ QR КОД (Неверная подпись)";
-            vibrate(false);
-            return;
-        }
-
-        const dataParts = payload.split('|');
-        const uidFromQr = dataParts[0];
-        const timestamp = parseInt(dataParts[1]);
-
-        // Optional: Expiry check (e.g., 24 hours)
-        const validityHours = 24;
-        if ((Date.now() - timestamp) > validityHours * 60 * 60 * 1000) {
-            resultEl.className = 'status-box st-err';
-            resultEl.textContent = "⏳ QR ПРОСРОЧЕН";
-            vibrate(false);
-            return;
-        }
-
-        // Find user in local DB by UID embedded in QR
-        const user = DB.find(u => u.uid === uidFromQr);
-
-        if (!user) {
-            resultEl.className = 'status-box st-err';
-            resultEl.textContent = `❌ НЕ НАЙДЕНО\nUID из QR отсутствует в базе.\nUID: ${uidFromQr}`;
-            vibrate(false);
-        } else if (user.status === 'blocked') {
-            resultEl.className = 'status-box st-err';
-            resultEl.textContent = `🚫 ЗАБЛОКИРОВАН\n${user.name}`;
-            vibrate(false);
-        } else {
-            resultEl.className = 'status-box st-ok';
-            resultEl.innerHTML = `✅ ДОСТУП РАЗРЕШЕН<br>Здравствуйте, <strong>${user.name}</strong>!`;
-            vibrate(true);
-        }
-
-    } catch (e) {
-        resultEl.className = 'status-box st-err';
-        resultEl.textContent = "❌ ОШИБКА ЧТЕНИЯ ДАННЫХ";
-    }
-}
-
-function onQrFailure(error) {
-    // Ignore scanning errors during process
-}
-
-// Generate QR for a specific user (called from list)
-window.generateUserQr = function(uid, name) {
-    const timestamp = Date.now();
-    const payload = `${uid}|${timestamp}`;
-    const signature = CryptoJS.HmacSHA256(payload, SECRET_KEY).toString(CryptoJS.enc.Hex);
-    const qrData = `${payload}.${signature}`;
-
-    const modal = document.getElementById('qr-modal');
-    const qrContainer = document.getElementById('qr-display-modal');
-    const nameLabel = document.getElementById('modal-name');
-
-    nameLabel.textContent = name;
-    qrContainer.innerHTML = ''; // Clear previous
-    
-    new QRCode(qrContainer, {
-        text: qrData,
-        width: 200,
-        height: 200,
-        colorDark : "#000000",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.M
-    });
-
-    modal.classList.remove('hidden');
-};
-
-// --- USER LIST RENDERING ---
-
-function renderUsers() {
-    const container = document.getElementById('users-container');
-    const countLabel = document.getElementById('count-users');
-    container.innerHTML = '';
-    countLabel.textContent = DB.length;
-
-    if (DB.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#aaa; font-size:0.9rem; padding:20px;">Нет зарегистрированных участников.<br>Начните с регистрации.</p>';
-        return;
-    }
-
-    // Sort: Newest first
-    const sorted = [...DB].sort((a,b) => b.addedAt - a.addedAt);
-
-    sorted.forEach(user => {
-        const div = document.createElement('div');
-        div.className = 'user-item';
-        
-        const statusClass = user.status === 'active' ? 'status-active' : 'status-blocked';
-        const statusText = user.status === 'active' ? 'Активен' : 'Бан';
-        
-        div.innerHTML = `
-            <div class="user-info">
-                <div class="user-name">${escapeHtml(user.name)} <span class="user-status ${statusClass}">${statusText}</span></div>
-                <div class="user-uid">${user.uid}</div>
-            </div>
-            <div class="actions">
-                <button class="btn-small btn-sec" onclick="generateUserQr('${user.uid}', '${escapeHtml(user.name)}')" title="Show QR">🎫</button>
-                <button class="btn-small ${user.status==='active'?'btn-danger':'btn-success'}" onclick="toggleBlock('${user.uid}')" title="${user.status === 'active' ? 'Block' : 'Unblock'}">
-                    ${user.status === 'active' ? 'Ban' : 'Ok'}
-                </button>
-                <button class="btn-small btn-danger" style="background:#ccc;color:#333;" onclick="deleteUser('${user.uid}')" title="Delete">✖</button>
-            </div>
-        `;
-        container.appendChild(div);
-    });
-}
-
-// Actions on list items
-window.toggleBlock = function(uid) {
-    const idx = DB.findIndex(u => u.uid === uid);
-    if (idx !== -1) {
-        DB[idx].status = DB[idx].status === 'active' ? 'blocked' : 'active';
-        saveDB();
-    }
-};
-
-window.deleteUser = function(uid) {
-    if(confirm("Удалить этого участника навсегда?")) {
-        DB = DB.filter(u => u.uid !== uid);
-        saveDB();
-    }
-};
