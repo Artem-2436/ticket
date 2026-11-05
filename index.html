@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xcortex Admin</title>
-    <!-- Подключаем стили -->
+    <title>Xcortex Admin OldSchool</title>
     <link rel="stylesheet" href="style.css">
     
-    <!-- Библиотеки CDN -->
+    <!-- Библиотеки -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
@@ -19,33 +18,31 @@
         <!-- ЭКРАН ВХОДА -->
         <div id="view-login">
             <h1>Xcortex Ticket</h1>
-            <p class="subtitle">Панель Организатора v10.1 Modular</p>
-            <button class="btn-primary" onclick="enterApp()">🛡 Войти в систему</button>
+            <p class="subtitle">Панель Организатора (Old School)</p>
+            <button class="btn-primary" onclick="showAdminPanel()">🛡 Войти в систему</button>
         </div>
 
         <!-- АДМИНСКАЯ ПАНЕЛЬ -->
         <div id="view-admin" style="display:none;">
             <h2>Организатор</h2>
             
-            <!-- Навигация -->
-            <!-- Навигация -->
-<nav class="tabs-nav">
-    <!-- ВАЖНО: Добавлен onclick к каждой кнопке -->
-    <button class="tab-btn active" data-tab="nfc" onclick="switchTab('nfc')">💳 NFC</button>
-    <button class="tab-btn" data-tab="qr" onclick="switchTab('qr')">📱 QR</button>
-    <button class="tab-btn" data-tab="check" onclick="switchTab('check')">✅ Вход</button>
-    <button class="tab-btn" data-tab="db" onclick="switchTab('db')">📋 База</button>
-</nav>
+            <!-- КНОПКИ МЕНЮ (Каждая со своим onclick) -->
+            <nav class="tabs-nav">
+                <button id="btn-tab-nfc" class="tab-btn active" onclick="openTabNFC()">💳 NFC</button>
+                <button id="btn-tab-qr" class="tab-btn" onclick="openTabQR()">📱 QR</button>
+                <button id="btn-tab-check" class="tab-btn" onclick="openTabCheck()">✅ Вход</button>
+                <button id="btn-tab-db" class="tab-btn" onclick="openTabDB()">📋 База</button>
+            </nav>
 
             <!-- КОНТЕЙНЕРЫ ВКЛАДОК -->
             
             <!-- 1. NFC Регистрация -->
-            <section id="tab-nfc" class="tab-panel active">
+            <section id="panel-nfc" class="tab-panel">
                 <label for="in-nfc-name">ФИО участника:</label>
                 <input type="text" id="in-nfc-name" placeholder="Иванов Иван">
                 
-                <button class="btn-primary" onclick="registerNFC()">➕ Привязать карту</button>
-                <button class="btn-secondary" onclick="searchNFC()">🔍 Найти по карте</button>
+                <button class="btn-primary" onclick="doRegisterNFC()">➕ Привязать карту</button>
+                <button class="btn-secondary" onclick="doSearchNFC()">🔍 Найти по карте</button>
                 
                 <div id="msg-nfc" class="message-box hidden"></div>
                 
@@ -59,11 +56,11 @@
             </section>
 
             <!-- 2. QR Генерация -->
-            <section id="tab-qr" class="tab-panel hidden">
+            <section id="panel-qr" class="tab-panel hidden">
                 <label for="in-qr-name">ФИО клиента (без карты):</label>
                 <input type="text" id="in-qr-name" placeholder="Петров Петр">
                 
-                <button class="btn-primary" onclick="generateQR()">🚀 Создать билет</button>
+                <button class="btn-primary" onclick="doGenerateQR()">🚀 Создать билет</button>
                 
                 <div id="area-qr-result" class="result-area hidden">
                     <p><strong id="txt-qr-name"></strong></p>
@@ -71,36 +68,36 @@
                     <p class="big-code" id="txt-qr-code">000000</p>
                     <small>Пусть клиент сфотографирует этот экран.</small>
                     <br><br>
-                    <button class="btn-secondary btn-small" onclick="resetQRForm()">Новый клиент</button>
+                    <button class="btn-secondary btn-small" onclick="doResetQR()">Новый клиент</button>
                 </div>
             </section>
 
             <!-- 3. Проверка Входа -->
-            <section id="tab-check" class="tab-panel hidden">
-                <button class="btn-primary" onclick="checkNFCAccess()">💳 Сканировать NFC</button>
-                <button class="btn-secondary" onclick="startCameraScan()">📷 Сканировать QR</button>
+            <section id="panel-check" class="tab-panel hidden">
+                <button class="btn-primary" onclick="doCheckNFC()">💳 Сканировать NFC</button>
+                <button class="btn-secondary" onclick="doStartCamera()">📷 Сканировать QR</button>
                 
                 <div id="cam-view" class="camera-view hidden">
                     <div id="reader-element"></div>
-                    <button class="btn-danger btn-small" onclick="stopCameraScan()">Стоп камера</button>
+                    <button class="btn-danger btn-small" onclick="doStopCamera()">Стоп камера</button>
                 </div>
 
                 <div id="msg-check" class="message-box hidden"></div>
             </section>
 
             <!-- 4. Общая База -->
-            <section id="tab-db" class="tab-panel hidden">
+            <section id="panel-db" class="tab-panel hidden">
                 <div class="list-header">
                     <strong>Все выданные билеты</strong>
                     <span class="badge" id="cnt-all">0</span>
                 </div>
                 <div id="list-db" class="data-list"></div>
                 
-                <button class="btn-danger" onclick="wipeDatabase()" style="margin-top:15px;">🗑 Очистить базу данных</button>
+                <button class="btn-danger" onclick="doWipeDB()" style="margin-top:15px;">🗑 Очистить базу данных</button>
             </section>
 
             <br>
-            <a href="#" onclick="logoutApp()" class="back-link">← Выход из панели</a>
+            <a href="#" onclick="hideAdminPanel()" class="back-link">← Выход из панели</a>
         </div>
 
     </div>
