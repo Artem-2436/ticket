@@ -28,12 +28,14 @@
             <h2>Организатор</h2>
             
             <!-- Навигация -->
-            <nav class="tabs-nav">
-                <button class="tab-btn active" data-tab="nfc">💳 NFC</button>
-                <button class="tab-btn" data-tab="qr">📱 QR</button>
-                <button class="tab-btn" data-tab="check">✅ Вход</button>
-                <button class="tab-btn" data-tab="db">📋 База</button>
-            </nav>
+            <!-- Навигация -->
+<nav class="tabs-nav">
+    <!-- ВАЖНО: Добавлен onclick к каждой кнопке -->
+    <button class="tab-btn active" data-tab="nfc" onclick="switchTab('nfc')">💳 NFC</button>
+    <button class="tab-btn" data-tab="qr" onclick="switchTab('qr')">📱 QR</button>
+    <button class="tab-btn" data-tab="check" onclick="switchTab('check')">✅ Вход</button>
+    <button class="tab-btn" data-tab="db" onclick="switchTab('db')">📋 База</button>
+</nav>
 
             <!-- КОНТЕЙНЕРЫ ВКЛАДОК -->
             
