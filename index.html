@@ -14,54 +14,72 @@
 <body>
 
 <div class="container" id="app">
-    <!-- ГЛАВНОЕ МЕНЮ (Админ / Выбор роли) -->
+    <!-- ГЛАВНОЕ МЕНЮ -->
     <div id="view-home">
         <h1>Xcortex Ticket</h1>
-        <p class="subtitle">Система контроля доступа</p>
+        <p class="subtitle">Система контроля доступа v6.0 Full</p>
         
-        <!-- Если открыто без хеша - показываем выбор -->
         <button class="btn-pri" onclick="showView('admin')">🛡 Панель Организатора</button>
         <br><br>
-        <small style="color:#aaa;">v5.0 Pre-generated Codes | Asinhrom / Xcortex</small>
+        <small style="color:#aaa;">Asinhrom / Xcortex Project</small>
     </div>
 
     <!-- АДМИНСКАЯ ПАНЕЛЬ -->
     <div id="view-admin" class="hidden">
         <h1>Организатор</h1>
         
-        <div style="display:flex; gap:10px; margin-bottom:20px;">
-            <button class="btn-sec" id="tab-reg" onclick="switchTab('reg')" style="flex:1;">➕ Регистрация</button>
-            <button class="btn-sec" id="tab-check" onclick="switchTab('check')" style="flex:1;">✅ Проверка входа</button>
+        <!-- Табы навигации -->
+        <div style="display:flex; gap:5px; margin-bottom:20px;">
+            <button class="btn-sec tab-btn" id="tab-nfc-reg" onclick="switchTab('nfc-reg')" style="flex:1;">💳 NFC Рег.</button>
+            <button class="btn-sec tab-btn" id="tab-qr-reg" onclick="switchTab('qr-reg')" style="flex:1;">📱 QR Рег.</button>
+            <button class="btn-sec tab-btn" id="tab-check" onclick="switchTab('check')" style="flex:1;">✅ Проверка</button>
         </div>
 
-        <!-- Таб Регистрации -->
-        <div id="panel-reg">
-            <div id="reg-idle">
+        <!-- БЛОК 1: РЕГИСТРАЦИЯ ПО NFC -->
+        <div id="panel-nfc-reg" class="tab-panel hidden">
+            <div class="form-group">
+                <label class="form-label">ФИО Участника</label>
+                <input type="text" id="input-name-nfc" class="form-input" placeholder="Иванов Иван Иванович">
+            </div>
+            
+            <button class="btn-pri" onclick="startRegisterNFC()">📱 Приложить карту для записи</button>
+            <div id="status-nfc-reg" class="status-box hidden"></div>
+            
+            <hr style="border:0; height:1px; background:#eee; margin:20px 0;">
+            
+            <strong>База участников (<span id="count-users">0</span>)</strong>
+            <div class="user-list" id="users-container"></div>
+        </div>
+
+        <!-- БЛОК 2: РЕГИСТРАЦИЯ ПО QR (ВРЕМЕННЫЙ КОД) -->
+        <div id="panel-qr-reg" class="tab-panel hidden">
+            <div id="qr-reg-idle">
                 <p>Нажмите кнопку, чтобы сгенерировать одноразовый пропуск.</p>
-                <button class="btn-pri" onclick="startRegistration()">🚀 Выдать QR для регистрации</button>
+                <button class="btn-pri" onclick="startRegistrationQR()">🚀 Выдать QR для регистрации</button>
             </div>
 
-            <div id="reg-active" class="hidden">
+            <div id="qr-reg-active" class="hidden">
                 <div class="timer-box">⏳ Живет: <span id="reg-timer">60</span> сек.</div>
                 <p style="font-size:0.9rem; color:#666;">Покажите этот код клиенту:</p>
                 <div id="invite-qr-container" class="qr-center"></div>
                 
                 <hr style="border:0; height:1px; background:#eee; margin:20px 0;">
                 
-                <div class="status-box st-info" id="reg-status-msg">
+                <div class="status-box st-info" id="qr-reg-status-msg">
                     Ожидание сканирования...<br>
                     <small>Код сохранен в базе автоматически.</small>
                 </div>
             </div>
         </div>
 
-        <!-- Таб Проверки Входа -->
-        <div id="panel-check" class="hidden">
-            <button class="btn-pri" onclick="openScanner()">📷 Сканировать билет клиента</button>
+        <!-- БЛОК 3: ПРОВЕРКА ВХОДА -->
+        <div id="panel-check" class="tab-panel hidden">
+            <button class="btn-pri" onclick="startCheckNFC()">💳 Сканировать NFC карту</button>
+            <button class="btn-sec" onclick="openScanner()">📷 Сканировать QR билет</button>
             
             <div id="scanner-view" class="hidden" style="margin-top:15px;">
                 <div id="reader-container"><div id="reader"></div></div>
-                <button class="btn-danger btn-small" onclick="closeScanner()">Стоп</button>
+                <button class="btn-danger btn-small" onclick="closeScanner()">Стоп камера</button>
             </div>
 
             <div id="check-result" class="status-box hidden"></div>
@@ -71,7 +89,7 @@
         <a href="#" onclick="showView('home')" style="color:#888; text-decoration:none; font-size:0.9rem;">← Выход</a>
     </div>
 
-    <!-- СКРЫТЫЙ БЛОК КЛИЕНТА (Активируется только при наличии #login_CODE в URL) -->
+    <!-- СКРЫТЫЙ БЛОК КЛИЕНТА (Активируется по хешу #login_CODE) -->
     <div id="view-client-login" class="hidden">
         <h1>Ваш Пропуск</h1>
         <p class="subtitle">Покажите этот экран охраннику</p>
