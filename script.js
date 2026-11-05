@@ -1,174 +1,320 @@
-/* Базовые настройки */
-* { box-sizing: border-box; }
-body {
-    margin: 0;
-    padding: 20px;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f4f6f9; /* Светло-серый фон страницы */
-    color: #333;
+// Ключи LocalStorage
+const KEY_NFC = 'xc_nfc_users'; // [{uid, name, status}]
+const KEY_QR = 'xc_qr_tickets'; // [{code, name, used}]
+
+let nfcReader = null;
+let qrScanner = null;
+let isScanningActive = false;
+
+document.addEventListener('DOMContentLoaded', () => {
+    if(typeof QRCode === 'undefined') alert("Нет интернета для библиотек");
+    showView('home');
+});
+
+function showView(v) {
+    ['home','admin'].forEach(x=>document.getElementById(`view-${x}`).classList.add('hidden'));
+    document.getElementById(`view-${v}`).classList.remove('hidden');
+    if(v!=='admin') stopAll();
 }
 
-/* Обертка для центрирования карточки */
-.wrapper {
-    max-width: 450px;
-    margin: 0 auto; /* Центрируем блок относительно окна браузера */
+function switchTab(t) {
+    document.querySelectorAll('.tab-panel').forEach(p=>p.classList.add('hidden'));
+    document.getElementById(`panel-${t}`).classList.remove('hidden');
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.getElementById(`tab-${t}`).classList.add('active');
+    stopAll();
+    
+    // Обновляем списки при переключении
+    if(t==='nfc') renderNFCList();
+    if(t==='list') renderAllTickets();
 }
 
-/* Карточка приложения */
-.card {
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-    padding: 25px;
-    text-align: center;
+// --- DB HELPERS ---
+
+// NFC Users
+function getNFCUsers() { try{return JSON.parse(localStorage.getItem(KEY_NFC))||[]}catch(e){return[]} }
+function saveNFCUser(u) { 
+    let l=getNFCUsers(); 
+    if(!l.find(x=>x.uid===u.uid)){ l.push(u); localStorage.setItem(KEY_NFC,JSON.stringify(l)); renderNFCList(); } 
+}
+function findNFCUser(uid) { return getNFCUsers().find(u=>u.uid===uid); }
+function updateNFCStatus(uid, newStatus) {
+    let l = getNFCUsers();
+    let idx = l.findIndex(u=>u.uid===uid);
+    if(idx!==-1) { l[idx].status=newStatus; localStorage.setItem(KEY_NFC,JSON.stringify(l)); renderNFCList(); }
+}
+function deleteNFCUser(uid) {
+    if(confirm("Удалить пользователя?")) {
+        let l=getNFCUsers().filter(u=>u.uid!==uid); 
+        localStorage.setItem(KEY_NFC,JSON.stringify(l)); 
+        renderNFCList(); 
+    }
 }
 
-h1, h2, h3 { margin-top: 0; color: #2d3748; }
-h1 { font-size: 1.8rem; margin-bottom: 10px; }
-.desc { color: #718096; margin-bottom: 25px; font-size: 0.9rem; }
-
-/* Кнопки */
-button {
-    width: 100%;
-    padding: 14px;
-    margin: 8px 0;
-    border: none;
-    border-radius: 10px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: 0.2s;
-    font-size: 1rem;
+// QR Tickets
+function getQRTickets() { try{return JSON.parse(localStorage.getItem(KEY_QR))||[]}catch(e){return[]} }
+function saveQRTicket(t) { 
+    let l=getQRTickets(); 
+    if(!l.find(x=>x.code===t.code)){ l.push(t); localStorage.setItem(KEY_QR,JSON.stringify(l)); } 
 }
-.btn-main { background: linear-gradient(to right, #6a11cb, #2575fc); color: white; }
-.btn-action { background: #6a11cb; color: white; }
-.btn-outline { background: transparent; border: 2px solid #6a11cb; color: #6a11cb; }
-.btn-danger { background: #e53e3e; color: white; }
-
-button:hover { opacity: 0.9; transform: translateY(-1px); }
-button:active { transform: scale(0.98); }
-
-/* Табы (Меню) */
-.tabs {
-    display: flex;
-    gap: 5px;
-    margin-bottom: 20px;
-    background: #edf2f7;
-    padding: 5px;
-    border-radius: 12px;
-}
-.tab {
-    flex: 1;
-    padding: 10px 5px;
-    font-size: 0.85rem;
-    background: transparent;
-    color: #4a5568;
-    border-radius: 8px;
-}
-.tab.active {
-    background: white;
-    color: #6a11cb;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    font-weight: bold;
+function findQRTicket(code) { return getQRTickets().find(t=>t.code===code); }
+function markQRTicketUsed(code) {
+    let l = getQRTickets();
+    let idx = l.findIndex(t=>t.code===code);
+    if(idx!==-1) { l[idx].used=true; localStorage.setItem(KEY_QR,JSON.stringify(l)); }
 }
 
-/* Формы */
-label { display: block; text-align: left; margin-bottom: 5px; font-size: 0.9rem; color: #4a5568; }
-input[type="text"] {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #cbd5e0;
-    border-radius: 8px;
-    margin-bottom: 15px;
-    font-size: 1rem;
-}
-input:focus { outline: 2px solid #6a11cb; border-color: transparent; }
+// --- ADMIN: NFC LOGIC ---
 
-/* Списки */
-.list-box {
-    max-height: 250px;
-    overflow-y: auto;
-    text-align: left;
-    margin-top: 10px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 5px;
-    background: #fff;
-}
-.item-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px;
-    border-bottom: 1px solid #f7fafc;
-    font-size: 0.9rem;
-}
-.item-row:last-child { border-bottom: none; }
-.info-text strong { display: block; color: #2d3748; }
-.meta-text { font-family: monospace; color: #a0aec0; font-size: 0.8rem; }
+async function registerNFC() {
+    const nameEl = document.getElementById('input-name-nfc');
+    const statusEl = document.getElementById('status-nfc');
+    const name = nameEl.value.trim();
+    
+    if(!name) return alert("Введите имя");
+    if(!('NDEFReader' in window)) return alert("NFC не поддерживается");
 
-/* Сообщения */
-.message {
-    padding: 12px;
-    border-radius: 8px;
-    margin: 15px 0;
-    font-weight: bold;
-    text-align: left;
-}
-.msg-ok { background: #c6f6d5; color: #22543d; }
-.msg-err { background: #fed7d7; color: #742a2a; }
-.msg-info { background: #bee3f8; color: #2a4365; }
+    statusEl.className='status-box st-info'; statusEl.textContent="Приложите карту..."; statusEl.classList.remove('hidden');
 
-/* QR Код */
-.result-card {
-    background: #f7fafc;
-    border: 1px dashed #cbd5e0;
-    padding: 15px;
-    border-radius: 10px;
-    margin-top: 15px;
-}
-.qr-holder {
-    margin: 15px auto;
-    width: fit-content;
-    background: white;
-    padding: 10px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-.code-big {
-    font-size: 2rem;
-    letter-spacing: 5px;
-    color: #6a11cb;
-    font-weight: bold;
-    margin: 10px 0;
+    try {
+        nfcReader = new NDEFReader();
+        await nfcReader.scan();
+        isScanningActive = true;
+        
+        nfcReader.onreading = e => {
+            let uid = e.serialNumber?.toLowerCase();
+            if(!uid) { statusEl.className='status-box st-err'; statusEl.textContent="UID скрыт браузером"; stopScan(); return; }
+            
+            if(findNFCUser(uid)) { 
+                statusEl.className='status-box st-warn'; 
+                statusEl.textContent=`Карта уже есть`; 
+                stopScan(); 
+                return; 
+            }
+            
+            saveNFCUser({uid,name,status:'active',time:Date.now()});
+            statusEl.className='status-box st-ok'; statusEl.innerHTML=`✅ ${name}<br>${uid}`;
+            vib(true); nameEl.value=''; stopScan();
+        };
+    } catch(err) { statusEl.className='status-box st-err'; statusEl.textContent="Ошибка: "+err.message; }
 }
 
-/* Камера */
-.cam-box {
-    margin-top: 15px;
-    border-radius: 10px;
-    overflow: hidden;
-    background: black;
-}
-#reader-video {
-    width: 100%;
-    height: 300px; /* Фиксированная высота, чтобы не схлопывалось */
-    object-fit: cover;
+async function searchNFC() {
+    if(!('NDEFReader' in window)) return alert("NFC не поддерживается");
+    const statusEl = document.getElementById('status-nfc');
+    statusEl.className='status-box st-info'; statusEl.textContent="Ищу... Приложите карту."; statusEl.classList.remove('hidden');
+
+    try {
+        nfcReader = new NDEFReader();
+        await nfcReader.scan();
+        isScanningActive = true;
+        nfcReader.onreading = e => {
+            let uid = e.serialNumber?.toLowerCase();
+            if(!uid) { statusEl.textContent="UID пуст"; stopScan(); return; }
+            
+            const user = findNFCUser(uid);
+            if(user) {
+                statusEl.className='status-box st-ok'; 
+                statusEl.innerHTML=`✅ Найден: <strong>${user.name}</strong>`;
+                highlightInList(uid);
+            } else {
+                statusEl.className='status-box st-err'; 
+                statusEl.textContent=`❌ Не найден.`;
+            }
+            stopScan();
+        };
+    } catch(err) { statusEl.textContent="Ошибка поиска"; }
 }
 
-.link-back {
-    display: inline-block;
-    margin-top: 20px;
-    color: #718096;
-    text-decoration: none;
-    font-size: 0.9rem;
-}
-.link-back:hover { color: #6a11cb; }
-
-.hidden { display: none !important; }
-.visible { display: block !important; }
-
-/* Адаптив */
-@media (max-width: 400px) {
-    .card { padding: 15px; }
-    h1 { font-size: 1.5rem; }
+function highlightInList(uid) {
+    const list = document.getElementById('nfc-list');
+    const items = list.children;
+    for(let i=0; i<items.length; i++) {
+        if(items[i].getAttribute('data-uid') === uid) {
+            items[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+            items[i].classList.add('highlight');
+            setTimeout(() => items[i].classList.remove('highlight'), 2000);
+            break;
         }
+    }
+}
+
+// --- ADMIN: QR LOGIC ---
+
+function generateQRTicket() {
+    const nameEl = document.getElementById('input-name-qr');
+    const name = nameEl.value.trim();
+    if(!name) return alert("Введите ФИО!");
+
+    let code;
+    do {
+        code = Math.floor(100000 + Math.random() * 900000).toString();
+    } while(findQRTicket(code));
+
+    saveQRTicket({ code, name, used: false, time: Date.now() });
+
+    document.getElementById('qr-result-area').classList.remove('hidden');
+    document.getElementById('qr-res-name').textContent = name;
+    document.getElementById('qr-res-code').textContent = code;
+
+    const qrBox = document.getElementById('qr-box');
+    qrBox.innerHTML = '';
+    new QRCode(qrBox, {
+        text: `XC:${code}`,
+        width: 220,
+        height: 220,
+        correctLevel : QRCode.CorrectLevel.H
+    });
+    
+    vib(true);
+}
+
+function resetQRForm() {
+    document.getElementById('input-name-qr').value = '';
+    document.getElementById('qr-result-area').classList.add('hidden');
+}
+
+// --- ADMIN: CHECK ENTRY ---
+
+async function startCheckNFC() {
+    if(!('NDEFReader' in window)) return alert("NFC нет");
+    const res=document.getElementById('check-result');
+    res.className='status-box st-info'; res.textContent="Жду карту..."; res.classList.remove('hidden');
+
+    try {
+        nfcReader=new NDEFReader();
+        await nfcReader.scan();
+        isScanningActive = true;
+        nfcReader.onreading=e=>{
+            let uid=e.serialNumber?.toLowerCase();
+            if(!uid){ res.className='status-box st-err'; res.textContent="UID пуст"; stopScan(); return; }
+            
+            const u=findNFCUser(uid);
+            if(!u) { res.className='status-box st-err'; res.textContent=`❌ Нет в базе`; vib(false); }
+            else if(u.status === 'blocked') { res.className='status-box st-err'; res.textContent=`🚫 ЗАБЛОКИРОВАН<br>${u.name}`; vib(false); }
+            else {
+                res.className='status-box st-ok'; res.innerHTML=`✅ Здравствуйте,<br><strong>${u.name}</strong>`; 
+                vib(true);
+            }
+            stopScan();
+        };
+    } catch(err){ res.className='status-box st-err'; res.textContent="Ошибка NFC"; }
+}
+
+function startScanQR() {
+    document.getElementById('scanner-view').classList.remove('hidden');
+    document.getElementById('check-result').classList.add('hidden');
+    
+    qrScanner = new Html5Qrcode("reader");
+    qrScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 200 }, onQrSuccess, onQrFail)
+        .catch(e => { alert("Камера: "+e); stopScanner(); });
+}
+
+function stopScanner() {
+    if(qrScanner) qrScanner.stop().then(()=>document.getElementById('scanner-view').classList.add('hidden')).catch(()=>{});
+}
+
+function onQrSuccess(txt) {
+    stopScanner();
+    const res=document.getElementById('check-result');
+    res.classList.remove('hidden');
+    
+    if(txt.startsWith('XC:')) {
+        const code=txt.split(':')[1];
+        const ticket = findQRTicket(code);
+
+        if (!ticket) {
+            res.className='status-box st-err'; res.innerHTML=`❌ НЕ НАЙДЕНО<br>Код: ${code}`; vib(false);
+        } else if (ticket.used) {
+            res.className='status-box st-err'; res.innerHTML=`⛔ УЖЕ ПРОШЕЛ<br>${ticket.name}`; vib(false);
+        } else {
+            markQRTicketUsed(ticket.code);
+            res.className='status-box st-ok'; res.innerHTML=`✅ ДОСТУП РАЗРЕШЕН<br>Клиент: <strong>${ticket.name}</strong>`; vib(true);
+        }
+    } else { res.className='status-box st-err'; res.textContent="Неверный формат"; }
+}
+
+function onQrFail(){}
+
+function stopScan(){ if(nfcReader&&isScanningActive)nfcReader.stopScan().catch(()=>{}); isScanningActive=false; }
+function stopAll(){ stopScanner(); stopScan(); }
+function vib(ok){ if(navigator.vibrate) navigator.vibrate(ok?[100]:[200,100,200]); }
+
+// --- RENDER LISTS ---
+
+function renderNFCList() {
+    const cont = document.getElementById('nfc-list');
+    const cnt = document.getElementById('count-nfc');
+    const users = getNFCUsers();
+    cont.innerHTML = ''; cnt.textContent = users.length;
+    
+    if(!users.length) { cont.innerHTML='<p style="color:#aaa;text-align:center">Пусто</p>'; return; }
+    
+    [...users].sort((a,b)=>b.time-a.time).forEach(u => {
+        const div = document.createElement('div'); div.className='item-row'; div.setAttribute('data-uid', u.uid);
+        const sColor = u.status==='blocked' ? '#d63031' : '#00b894';
+        const sText = u.status==='blocked' ? 'BAN' : 'OK';
+        
+        div.innerHTML = `
+            <div class="item-info">
+                <strong>${esc(u.name)}</strong> <span style="font-size:0.7rem;color:${sColor};">${sText}</span>
+                <div class="item-meta">${u.uid}</div>
+            </div>
+            <div style="display:flex;gap:2px;">
+                <button class="btn-small ${u.status==='blocked'?'btn-success':'btn-danger'}" onclick="toggleBlock('${u.uid}')">${u.status==='blocked'?'Unban':'Ban'}</button>
+                <button class="btn-danger btn-small" onclick="deleteNFCUser('${u.uid}')">✖</button>
+            </div>
+        `;
+        cont.appendChild(div);
+    });
+}
+
+window.toggleBlock = function(uid) {
+    let u = findNFCUser(uid);
+    if(u) updateNFCStatus(uid, u.status==='blocked'?'active':'blocked');
+};
+
+function renderAllTickets() {
+    const cont = document.getElementById('all-tickets-list');
+    const cnt = document.getElementById('count-all');
+    const nfc = getNFCUsers();
+    const qr = getQRTickets();
+    
+    // Объединяем для отображения общей статистики или просто показываем оба типа
+    // Для простоты покажем только QR билеты здесь, так как NFC есть во вкладке NFC
+    cont.innerHTML = ''; 
+    cnt.textContent = qr.length;
+    
+    if(!qr.length) { cont.innerHTML='<p style="color:#aaa;text-align:center">Нет QR билетов</p>'; return; }
+    
+    [...qr].sort((a,b)=>b.time-a.time).forEach(t => {
+        const div = document.createElement('div'); div.className='item-row';
+        const status = t.used ? '<span style="color:red;font-size:0.7rem;">USED</span>' : '<span style="color:green;font-size:0.7rem;">ACTIVE</span>';
+        div.innerHTML = `
+            <div class="item-info">
+                <strong>${esc(t.name)}</strong>
+                <div class="item-meta">Code: ${t.code}</div>
+            </div>
+            <div>${status}</div>
+        `;
+        cont.appendChild(div);
+    });
+}
+
+function clearAllDB() {
+    if(confirm("Удалить ВСЮ базу (NFC и QR)?")) {
+        localStorage.removeItem(KEY_NFC);
+        localStorage.removeItem(KEY_QR);
+        renderNFCList();
+        renderAllTickets();
+    }
+}
+
+function esc(s) { return s.replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+// Export
+window.showView=showView; window.switchTab=switchTab;
+window.registerNFC=registerNFC; window.searchNFC=searchNFC;
+window.generateQRTicket=generateQRTicket; window.resetQRForm=resetQRForm;
+window.startCheckNFC=startCheckNFC; window.startScanQR=startScanQR; window.stopScanner=stopScanner;
+window.clearAllDB=clearAllDB; window.toggleBlock=toggleBlock; window.deleteNFCUser=deleteNFCUser;
