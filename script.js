@@ -4,30 +4,29 @@ var KEY_QR = 'xc_qr_final';
 
 var nfcReader = null;
 var qrScanner = null;
+var currentTab = 'nfc'; // Трекинг текущей активной вкладки
 
 // Инициализация при загрузке
 document.addEventListener('DOMContentLoaded', function() {
-    console.log("Xcortex OldSchool Loaded");
+    console.log("Xcortex OldSchool Fixed Loaded");
     
-    // Проверка библиотек
     if(typeof QRCode === 'undefined') {
-        alert("Ошибка загрузки QR библиотеки. Обновите страницу.");
+        alert("Ошибка загрузки QR библиотеки.");
         return;
     }
     if(typeof Html5Qrcode === 'undefined') {
-        alert("Ошибка загрузки сканера камеры. Обновите страницу.");
+        alert("Ошибка загрузки сканера камеры.");
         return;
     }
 
     renderLists();
 });
 
-// --- НАВИГАЦИЯ (РУЧНАЯ ДЛЯ КАЖДОЙ ВКЛАДКИ) ---
+// --- НАВИГАЦИЯ (БЕЗОПАСНОЕ ПЕРЕКЛЮЧЕНИЕ) ---
 
 function showAdminPanel() {
     document.getElementById('view-login').style.display = 'none';
     document.getElementById('view-admin').style.display = 'block';
-    // По умолчанию открываем NFC
     openTabNFC(); 
 }
 
@@ -35,56 +34,74 @@ function hideAdminPanel() {
     stopAllScans();
     document.getElementById('view-admin').style.display = 'none';
     document.getElementById('view-login').style.display = 'block';
+    currentTab = ''; 
 }
 
-// Функция очистки всех панелей перед открытием новой
-function clearPanels() {
-    // Скрываем все секции
-    document.getElementById('panel-nfc').classList.add('hidden');
-    document.getElementById('panel-qr').classList.add('hidden');
-    document.getElementById('panel-check').classList.add('hidden');
-    document.getElementById('panel-db').classList.add('hidden');
-    
-    // Убираем активный класс у всех кнопок меню
-    document.getElementById('btn-tab-nfc').classList.remove('active');
-    document.getElementById('btn-tab-qr').classList.remove('active');
-    document.getElementById('btn-tab-check').classList.remove('active');
-    document.getElementById('btn-tab-db').classList.remove('active');
-    
-    // Останавливаем сканеры
-    stopAllScans();
+/**
+ * Универсальная функция безопасного переключения.
+ */
+function safeSwitchTo(newTabName) {
+    // 1. Защита от дребезга
+    if (currentTab === newTabName) return;
+
+    // 2. ЖЕСТКАЯ ОСТАНОВКА ВСЕХ ПРОЦЕССОВ ПЕРЕД СМЕНОЙ
+    stopAllScans(); 
+
+    // 3. Готовим список всех возможных панелей и кнопок
+    var panels = ['panel-nfc', 'panel-qr', 'panel-check', 'panel-db'];
+    var buttons = ['btn-tab-nfc', 'btn-tab-qr', 'btn-tab-check', 'btn-tab-db'];
+
+    // 4. ШАГ А: Гарантируем видимость НОВОЙ панели
+    var targetPanelId = '';
+    if(newTabName === 'nfc') targetPanelId = 'panel-nfc';
+    else if(newTabName === 'qr') targetPanelId = 'panel-qr';
+    else if(newTabName === 'check') targetPanelId = 'panel-check';
+    else if(newTabName === 'db') targetPanelId = 'panel-db';
+
+    var targetElement = document.getElementById(targetPanelId);
+    if (targetElement) {
+        targetElement.classList.remove('hidden');
+    }
+
+    // 5. ШАГ Б: Теперь скрываем ВСЕ остальные панели
+    for(var i=0; i<panels.length; i++) {
+        var pid = panels[i];
+        if(pid !== targetPanelId) {
+            var el = document.getElementById(pid);
+            if(el) el.classList.add('hidden');
+        }
+    }
+
+    // 6. ШАГ В: Обновляем стиль кнопок
+    for(var j=0; j<buttons.length; j++) {
+        var bid = buttons[j];
+        var btnEl = document.getElementById(bid);
+        if(btnEl) {
+            btnEl.classList.remove('active');
+            if(bid === 'btn-tab-' + newTabName) {
+                btnEl.classList.add('active');
+            }
+        }
+    }
+
+    // 7. Обновляем трекер
+    currentTab = newTabName;
+
+    // 8. Специфичные действия
+    if(newTabName === 'db') {
+        renderLists();
+    }
 }
 
-// Открытие вкладки NFC
-function openTabNFC() {
-    clearPanels();
-    document.getElementById('panel-nfc').classList.remove('hidden');
-    document.getElementById('btn-tab-nfc').classList.add('active');
-}
+// Отдельные функции-обертки
+function openTabNFC() { safeSwitchTo('nfc'); }
+function openTabQR() { safeSwitchTo('qr'); }
+function openTabCheck() { safeSwitchTo('check'); }
+function openTabDB() { safeSwitchTo('db'); }
 
-// Открытие вкладки QR
-function openTabQR() {
-    clearPanels();
-    document.getElementById('panel-qr').classList.remove('hidden');
-    document.getElementById('btn-tab-qr').classList.add('active');
-}
-
-// Открытие вкладки Проверка
-function openTabCheck() {
-    clearPanels();
-    document.getElementById('panel-check').classList.remove('hidden');
-    document.getElementById('btn-tab-check').classList.add('active');
-}
-
-// Открытие вкладки База
-function openTabDB() {
-    clearPanels();
-    document.getElementById('panel-db').classList.remove('hidden');
-    document.getElementById('btn-tab-db').classList.add('active');
-    renderLists(); // Обновляем список при открытии базы
-}
 
 // --- БАЗА ДАННЫХ (LocalStorage Helpers) ---
+// (Код без изменений, он рабочий)
 
 function getNFCUsers() { 
     try { return JSON.parse(localStorage.getItem(KEY_NFC)) || []; } 
@@ -325,10 +342,14 @@ function doStartCamera() {
 
 function doStopCamera() {
     if(qrScanner) {
+        // ВАЖНО: Полностью очищаем контейнер после остановки
         qrScanner.stop().then(function() {
             document.getElementById('cam-view').classList.add('hidden');
+            // Очищаем внутренний div, чтобы камера не оставила следов в DOM
+            document.getElementById('reader-element').innerHTML = ''; 
         }).catch(function(){
              document.getElementById('cam-view').classList.add('hidden');
+             document.getElementById('reader-element').innerHTML = '';
         });
     }
 }
@@ -377,9 +398,21 @@ function stopScan() {
     if(nfcReader) nfcReader.stopScan().catch(function(){}); 
 }
 
+// !!! КРИТИЧЕСКИ ВАЖНАЯ ФУНКЦИЯ ДЛЯ ИСПРАВЛЕНИЯ БАГА !!!
 function stopAllScans() { 
+    // 1. Останавливаем NFC
     stopScan(); 
+    
+    // 2. Останавливаем Камеру
     doStopCamera(); 
+    
+    // 3. Принудительно скрываем блок камеры, если он остался висеть
+    var camView = document.getElementById('cam-view');
+    if(camView) camView.classList.add('hidden');
+    
+    // 4. Очищаем читалку камеры от мусора
+    var readerDiv = document.getElementById('reader-element');
+    if(readerDiv) readerDiv.innerHTML = '';
 }
 
 function vib(success) { 
@@ -405,7 +438,6 @@ function renderLists() {
     nfcListEl.innerHTML = '';
     nfcCountEl.textContent = users.length;
     
-    // Сортировка простая (разворот массива)
     var sortedUsers = users.slice().reverse(); 
     
     for(var i=0; i<sortedUsers.length; i++) {
