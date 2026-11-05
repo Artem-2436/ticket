@@ -1,311 +1,410 @@
 // === НАСТРОЙКИ ===
-const KEY_NFC = 'xc_nfc_db'; // [{uid, name}]
-const KEY_QR = 'xc_qr_db';   // [{code, name, used}]
+const KEY_NFC = 'xc_nfc_v10';
+const KEY_QR = 'xc_qr_v10';
 
 let nfcReader = null;
 let qrScanner = null;
 
 // Инициализация при загрузке
 document.addEventListener('DOMContentLoaded', () => {
-    if(typeof QRCode === 'undefined') console.warn("Библиотека QR не загружена");
-    renderLists(); // Сразу рисуем списки, если данные есть
+    console.log("Xcortex System Ready");
+    // Проверяем библиотеки
+    if(typeof QRCode === 'undefined') alert("Ошибка: Не загрузилась библиотека QR Code. Проверьте интернет.");
+    if(typeof Html5Qrcode === 'undefined') alert("Ошибка: Не загрузилась библиотека сканера. Проверьте интернет.");
+    
+    renderLists(); // Рисуем списки сразу
 });
 
 // --- НАВИГАЦИЯ ---
 
-function enterAdmin() {
-    document.getElementById('screen-login').style.display = 'none';
-    document.getElementById('screen-admin').style.display = 'block';
-    switchTab('nfc'); // По умолчанию открываем первую вкладку
+function enterApp() {
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('view-admin').style.display = 'block';
+    switchTab('nfc'); // Открываем первую вкладку
 }
 
-function logout() {
+function logoutApp() {
     stopAllScans();
-    document.getElementById('screen-admin').style.display = 'none';
-    document.getElementById('screen-login').style.display = 'block';
+    document.getElementById('view-admin').style.display = 'none';
+    document.getElementById('view-login').style.display = 'block';
 }
 
-function switchTab(tabName) {
-    // Скрыть все контенты
-    document.querySelectorAll('.content').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.content').forEach(el => el.classList.remove('visible'));
+// Переключение вкладок через делегирование событий или прямой вызов
+// Используем прямой вызов для простоты
+window.switchTab = function(tabName) {
+    // Скрыть все панели
+    document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
     
-    // Показать нужный
-    const target = document.getElementById(`tab-${tabName}`);
-    if(target) {
-        target.classList.remove('hidden');
-        target.classList.add('visible');
+    // Показать нужную
+    const targetPanel = document.getElementById(`tab-${tabName}`);
+    if(targetPanel) {
+        targetPanel.classList.remove('hidden');
+        targetPanel.classList.add('active');
     }
 
-    // Обновить стиль табов
-    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
-    const btn = document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`);
-    if(btn) btn.classList.add('active');
+    // Обновить кнопки табов
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if(btn.getAttribute('data-tab') === tabName) {
+            btn.classList.add('active');
+        }
+    });
 
     stopAllScans(); // Останавливаем сканеры при переключении
     
     // Если перешли на список, обновляем его
-    if(tabName === 'list') renderLists();
+    if(tabName === 'db') renderLists();
+};
+
+// --- БАЗА ДАННЫХ (LocalStorage Helpers) ---
+
+function getNFCUsers() { 
+    try { return JSON.parse(localStorage.getItem(KEY_NFC)) || []; } 
+    catch(e) { return []; } 
 }
 
-// --- БАЗА ДАННЫХ (LocalStorage) ---
-
-function getNFC() { try { return JSON.parse(localStorage.getItem(KEY_NFC)) || []; } catch(e) { return []; } }
-function saveNFC(u) { 
-    let l = getNFC(); 
-    if(!l.find(x=>x.uid===u.uid)) { l.push(u); localStorage.setItem(KEY_NFC, JSON.stringify(l)); } 
+function saveNFCUser(user) { 
+    let list = getNFCUsers(); 
+    // Проверка дубликата UID
+    if(!list.find(u => u.uid === user.uid)) { 
+        list.push(user); 
+        localStorage.setItem(KEY_NFC, JSON.stringify(list)); 
+    } 
 }
-function findNFC(uid) { return getNFC().find(u=>u.uid===uid); }
-function delNFC(uid) { 
-    if(confirm("Удалить карту?")) {
-        let l = getNFC().filter(u=>u.uid!==uid); 
-        localStorage.setItem(KEY_NFC, JSON.stringify(l)); 
+
+function findNFCUser(uid) { 
+    return getNFCUsers().find(u => u.uid === uid); 
+}
+
+function deleteNFCUser(uid) { 
+    if(confirm("Удалить этого пользователя?")) {
+        let list = getNFCUsers().filter(u => u.uid !== uid); 
+        localStorage.setItem(KEY_NFC, JSON.stringify(list)); 
         renderLists(); 
     }
 }
 
-function getQR() { try { return JSON.parse(localStorage.getItem(KEY_QR)) || []; } catch(e) { return []; } }
-function saveQR(t) { 
-    let l = getQR(); 
-    if(!l.find(x=>x.code===t.code)) { l.push(t); localStorage.setItem(KEY_QR, JSON.stringify(l)); } 
-}
-function findQR(code) { return getQR().find(t=>t.code===code); }
-function markUsed(code) {
-    let l = getQR();
-    let idx = l.findIndex(t=>t.code===code);
-    if(idx!==-1) { l[idx].used=true; localStorage.setItem(KEY_QR, JSON.stringify(l)); }
+function getQRTickets() { 
+    try { return JSON.parse(localStorage.getItem(KEY_QR)) || []; } 
+    catch(e) { return []; } 
 }
 
-// --- ЛОГИКА NFC ---
+function saveQRTicket(ticket) { 
+    let list = getQRTickets(); 
+    // Проверка дубликата кода
+    if(!list.find(t => t.code === ticket.code)) { 
+        list.push(ticket); 
+        localStorage.setItem(KEY_QR, JSON.stringify(list)); 
+    } 
+}
 
-async function regNFC() {
+function findQRTicket(code) { 
+    return getQRTickets().find(t => t.code === code); 
+}
+
+function markTicketUsed(code) {
+    let list = getQRTickets();
+    let idx = list.findIndex(t => t.code === code);
+    if(idx !== -1) { 
+        list[idx].used = true; 
+        localStorage.setItem(KEY_QR, JSON.stringify(list)); 
+    }
+}
+
+// --- ЛОГИКА NFC РЕГИСТРАЦИИ ---
+
+async function registerNFC() {
     const nameInput = document.getElementById('in-nfc-name');
     const msgEl = document.getElementById('msg-nfc');
     const name = nameInput.value.trim();
     
-    if(!name) return alert("Введите имя!");
-    if(!('NDEFReader' in window)) return alert("NFC не поддерживается этим браузером.");
+    if(!name) return alert("Введите ФИО!");
+    if(!('NDEFReader' in window)) return alert("Web NFC не поддерживается этим браузером.");
 
-    showMsg(msgEl, "Приложите карту...", "info");
+    showMsg(msgEl, "Приложите карту к телефону...", "info");
 
     try {
         nfcReader = new NDEFReader();
         await nfcReader.scan();
         
-        nfcReader.onreading = e => {
-            let uid = e.serialNumber?.toLowerCase();
-            if(!uid) { showMsg(msgEl, "UID пустой (скрыт системой)", "err"); stopScan(); return; }
+        nfcReader.onreading = event => {
+            let uid = event.serialNumber?.toLowerCase();
             
-            if(findNFC(uid)) { showMsg(msgEl, "Карта уже зарегистрирована!", "err"); stopScan(); return; }
+            if(!uid) { 
+                showMsg(msgEl, "❌ Ошибка: Браузер скрыл UID карты.", "err"); 
+                stopScan(); 
+                return; 
+            }
             
-            saveNFC({uid, name, time: Date.now()});
-            showMsg(msgEl, `✅ Успешно: ${name}`, "ok");
+            if(findNFCUser(uid)) { 
+                showMsg(msgEl, "⚠️ Карта уже зарегистрирована!", "err"); 
+                stopScan(); 
+                return; 
+            }
+            
+            saveNFCUser({uid, name, time: Date.now()});
+            showMsg(msgEl, `✅ Успешно! Имя: ${name}`, "ok");
             nameInput.value = '';
             renderLists();
             stopScan();
         };
     } catch(err) {
-        showMsg(msgEl, "Ошибка: " + err.message, "err");
+        showMsg(msgEl, "Ошибка запуска NFC: " + err.message, "err");
     }
 }
 
 async function searchNFC() {
     const msgEl = document.getElementById('msg-nfc');
-    if(!('NDEFReader' in window)) return alert("NFC нет");
+    if(!('NDEFReader' in window)) return alert("Web NFC не поддерживается.");
     
-    showMsg(msgEl, "Ищу... Приложите карту.", "info");
+    showMsg(msgEl, "Ищем клиента... Приложите карту.", "info");
     try {
         nfcReader = new NDEFReader();
         await nfcReader.scan();
-        nfcReader.onreading = e => {
-            let uid = e.serialNumber?.toLowerCase();
-            const user = findNFC(uid);
+        nfcReader.onreading = event => {
+            let uid = event.serialNumber?.toLowerCase();
+            const user = findNFCUser(uid);
             if(user) {
-                showMsg(msgEl, `Найден: ${user.name}`, "ok");
-                highlightItem(uid); // Прокрутка к элементу
+                showMsg(msgEl, `✅ Найден: ${user.name}`, "ok");
+                highlightListItem(uid);
             } else {
-                showMsg(msgEl, "Не найден в базе", "err");
+                showMsg(msgEl, "❌ Клиент не найден в базе.", "err");
             }
             stopScan();
         };
-    } catch(err) { showMsg(msgEl, "Ошибка поиска", "err"); }
+    } catch(err) { 
+        showMsg(msgEl, "Ошибка поиска", "err"); 
+    }
 }
 
-function highlightItem(uid) {
-    const list = document.getElementById('list-nfc');
-    const items = list.children;
-    for(let i=0; i<items.length; i++) {
+function highlightListItem(uid) {
+    const listContainer = document.getElementById('list-nfc');
+    const items = listContainer.children;
+    for(let i = 0; i < items.length; i++) {
         if(items[i].getAttribute('data-id') === uid) {
             items[i].scrollIntoView({behavior:'smooth', block:'center'});
-            items[i].style.backgroundColor = '#fffbe6';
-            setTimeout(() => items[i].style.backgroundColor = '', 2000);
+            items[i].style.backgroundColor = '#fffbe6'; // Желтая подсветка
+            setTimeout(() => { items[i].style.backgroundColor = ''; }, 2000);
             break;
         }
     }
 }
 
-// --- ЛОГИКА QR ---
+// --- ЛОГИКА QR ГЕНЕРАЦИИ ---
 
-function genQR() {
+function generateQR() {
     const nameInput = document.getElementById('in-qr-name');
     const name = nameInput.value.trim();
-    if(!name) return alert("Введите имя!");
+    if(!name) return alert("Введите ФИО клиента!");
 
-    // Генерируем уникальный код
+    // Генерируем уникальный 6-значный код
     let code;
     do {
         code = Math.floor(100000 + Math.random() * 900000).toString();
-    } while(findQR(code));
+    } while(findQRTicket(code)); // Пока не найдем свободный
 
-    saveQR({code, name, used:false, time:Date.now()});
+    saveQRTicket({code, name, used:false, time:Date.now()});
 
-    // UI
+    // Обновляем UI
     document.getElementById('area-qr-result').classList.remove('hidden');
     document.getElementById('txt-qr-name').textContent = name;
     document.getElementById('txt-qr-code').textContent = code;
 
+    // Рисуем QR
     const qrBox = document.getElementById('box-qr-img');
-    qrBox.innerHTML = '';
+    qrBox.innerHTML = ''; // Очищаем старый
     new QRCode(qrBox, {
         text: `XC:${code}`,
-        width: 200,
-        height: 200
+        width: 150,
+        height: 150,
+        correctLevel : QRCode.CorrectLevel.H
     });
     
     renderLists(); // Обновляем общий список
 }
 
-function resetQR() {
+function resetQRForm() {
     document.getElementById('in-qr-name').value = '';
     document.getElementById('area-qr-result').classList.add('hidden');
 }
 
 // --- ЛОГИКА ПРОВЕРКИ ВХОДА ---
 
-async function scanNFCCheck() {
+async function checkNFCAccess() {
     const msgEl = document.getElementById('msg-check');
-    if(!('NDEFReader' in window)) return alert("NFC нет");
+    if(!('NDEFReader' in window)) return alert("Web NFC не поддерживается.");
     
-    showMsg(msgEl, "Жду карту...", "info");
+    showMsg(msgEl, "Жду карту посетителя...", "info");
     try {
         nfcReader = new NDEFReader();
         await nfcReader.scan();
-        nfcReader.onreading = e => {
-            let uid = e.serialNumber?.toLowerCase();
-            const user = findNFC(uid);
+        nfcReader.onreading = event => {
+            let uid = event.serialNumber?.toLowerCase();
+            const user = findNFCUser(uid);
+            
             if(user) {
-                showMsg(msgEl, `✅ Добро пожаловать, ${user.name}!`, "ok");
+                showMsg(msgEl, `✅ ДОСТУП РАЗРЕШЕН<br>Здравствуйте, ${user.name}!`, "ok");
                 vib(true);
             } else {
-                showMsg(msgEl, "❌ Карта не найдена", "err");
+                showMsg(msgEl, "❌ ОТКАЗАНО<br>Карта не найдена в базе.", "err");
                 vib(false);
             }
             stopScan();
         };
-    } catch(err) { showMsg(msgEl, "Ошибка NFC", "err"); }
+    } catch(err) { 
+        showMsg(msgEl, "Ошибка NFC: " + err.message, "err"); 
+    }
 }
 
-function startCamScan() {
-    document.getElementById('cam-container').classList.remove('hidden');
+function startCameraScan() {
+    document.getElementById('cam-view').classList.remove('hidden');
     document.getElementById('msg-check').classList.add('hidden');
     
-    qrScanner = new Html5Qrcode("reader-video");
-    qrScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 200 }, onQrSuccess, onQrFail)
-        .catch(e => { alert("Камера ошибка"); stopCamScan(); });
+    qrScanner = new Html5Qrcode("reader-element");
+    // Запускаем камеру
+    qrScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 150 }, onQrSuccess, onQrFail)
+        .catch(e => { 
+            alert("Ошибка доступа к камере: " + e); 
+            stopCameraScan(); 
+        });
 }
 
-function stopCamScan() {
-    if(qrScanner) qrScanner.stop().then(() => document.getElementById('cam-container').classList.add('hidden')).catch(()=>{});
+function stopCameraScan() {
+    if(qrScanner) {
+        qrScanner.stop().then(() => {
+            document.getElementById('cam-view').classList.add('hidden');
+        }).catch(()=>{
+             document.getElementById('cam-view').classList.add('hidden');
+        });
+    }
 }
 
-function onQrSuccess(txt) {
-    stopCamScan();
+function onQrSuccess(decodedText) {
+    stopCameraScan();
     const msgEl = document.getElementById('msg-check');
     msgEl.classList.remove('hidden');
     
-    if(txt.startsWith('XC:')) {
-        const code = txt.split(':')[1];
-        const ticket = findQR(code);
+    // Проверяем формат XC:CODE
+    if(decodedText.startsWith('XC:')) {
+        const code = decodedText.split(':')[1];
+        const ticket = findQRTicket(code);
         
         if(!ticket) {
-            showMsg(msgEl, "❌ Неверный код", "err"); vib(false);
+            showMsg(msgEl, "❌ НЕВЕРНЫЙ КОД<br>Такого билета нет в базе.", "err"); 
+            vib(false);
         } else if(ticket.used) {
-            showMsg(msgEl, `⛔ Уже использован (${ticket.name})`, "err"); vib(false);
+            showMsg(msgEl, `⛔ УЖЕ ИСПОЛЬЗОВАН<br>(${ticket.name})`, "err"); 
+            vib(false);
         } else {
-            markUsed(ticket.code);
-            showMsg(msgEl, `✅ Разрешено: ${ticket.name}`, "ok"); vib(true);
-            renderLists();
+            markTicketUsed(ticket.code);
+            showMsg(msgEl, `✅ ДОСТУП РАЗРЕШЕН<br>Клиент: ${ticket.name}`, "ok"); 
+            vib(true);
+            renderLists(); // Обновляем статус в списке
         }
     } else {
-        showMsg(msgEl, "❌ Не наш формат", "err");
+        showMsg(msgEl, "❌ НЕ НАШ ФОРМАТ<br>Это не Xcortex билет.", "err");
     }
 }
 
-function onQrFail() {}
-
-// --- ВСПОМОГАТЕЛЬНЫЕ ---
-
-function showMsg(el, text, type) {
-    el.textContent = text;
-    el.className = 'message';
-    if(type==='ok') el.classList.add('msg-ok');
-    if(type==='err') el.classList.add('msg-err');
-    if(type==='info') el.classList.add('msg-info');
-    el.classList.remove('hidden');
+function onQrFail(error) {
+    // Игнорируем ошибки во время процесса сканирования
 }
 
-function stopScan() { if(nfcReader) nfcReader.stopScan().catch(()=>{}); }
-function stopAllScans() { stopScan(); stopCamScan(); }
-function vib(ok) { if(navigator.vibrate) navigator.vibrate(ok?[100]:[200,100,200]); }
-function esc(s) { return s.replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+// --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+
+function showMsg(element, text, type) {
+    element.textContent = text;
+    element.className = 'message-box'; // Сбрасываем классы
+    if(type === 'ok') element.classList.add('msg-ok');
+    if(type === 'err') element.classList.add('msg-err');
+    if(type === 'info') element.classList.add('msg-info');
+    element.classList.remove('hidden');
+}
+
+function stopScan() { 
+    if(nfcReader) nfcReader.stopScan().catch(()=>{}); 
+}
+
+function stopAllScans() { 
+    stopScan(); 
+    stopCameraScan(); 
+}
+
+function vib(success) { 
+    if(navigator.vibrate) navigator.vibrate(success ? [100] : [200, 100, 200]); 
+}
+
+function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;")
+               .replace(/</g, "&lt;")
+               .replace(/>/g, "&gt;")
+               .replace(/"/g, "&quot;")
+               .replace(/'/g, "&#039;");
+}
+
+// --- ОТРИСОВКА СПИСКОВ ---
 
 function renderLists() {
-    // Список NFC
-    const nfcList = document.getElementById('list-nfc');
-    const nfcCnt = document.getElementById('cnt-nfc');
-    const users = getNFC();
-    nfcList.innerHTML = '';
-    nfcCnt.textContent = users.length;
+    // 1. Список NFC пользователей
+    const nfcListEl = document.getElementById('list-nfc');
+    const nfcCountEl = document.getElementById('cnt-nfc');
+    const users = getNFCUsers();
     
-    [...users].sort((a,b)=>b.time-a.time).forEach(u => {
+    nfcListEl.innerHTML = '';
+    nfcCountEl.textContent = users.length;
+    
+    // Сортировка: новые сверху
+    [...users].sort((a,b) => b.time - a.time).forEach(user => {
         const div = document.createElement('div');
-        div.className = 'item-row';
-        div.setAttribute('data-id', u.uid);
+        div.className = 'list-item';
+        div.setAttribute('data-id', user.uid);
+        
         div.innerHTML = `
-            <div class="info-text"><strong>${esc(u.name)}</strong><span class="meta-text">${u.uid}</span></div>
-            <button class="btn-danger" style="width:auto;padding:5px 10px;font-size:0.7rem;" onclick="delNFC('${u.uid}')">✖</button>
+            <div class="item-info">
+                <strong>${escapeHtml(user.name)}</strong>
+                <span class="item-meta">${user.uid}</span>
+            </div>
+            <button class="btn-danger btn-small" onclick="deleteNFCUser('${user.uid}')">✖</button>
         `;
-        nfcList.appendChild(div);
+        nfcListEl.appendChild(div);
     });
 
-    // Общий список (для вкладки List)
-    const allList = document.getElementById('list-all');
-    const qrTickets = getQR();
-    allList.innerHTML = '';
+    // 2. Общий список QR билетов
+    const dbListEl = document.getElementById('list-db');
+    const dbCountEl = document.getElementById('cnt-all');
+    const tickets = getQRTickets();
     
-    if(qrTickets.length === 0 && users.length === 0) {
-        allList.innerHTML = '<p style="color:#aaa;text-align:center">База пуста</p>';
+    dbListEl.innerHTML = '';
+    dbCountEl.textContent = tickets.length;
+    
+    if(tickets.length === 0 && users.length === 0) {
+        dbListEl.innerHTML = '<p style="color:#aaa;text-align:center;padding:20px;">База данных пуста.</p>';
         return;
     }
 
-    // Объединяем для вывода (упрощенно показываем только QR здесь, так как NFC есть во вкладке NFC)
-    // Или можно показать оба типа. Давайте покажем QR билеты.
-    [...qrTickets].sort((a,b)=>b.time-a.time).forEach(t => {
+    [...tickets].sort((a,b) => b.time - a.time).forEach(ticket => {
         const div = document.createElement('div');
-        div.className = 'item-row';
-        const status = t.used ? '<span style="color:red">USED</span>' : '<span style="color:green">ACTIVE</span>';
+        div.className = 'list-item';
+        const statusColor = ticket.used ? '#e53e3e' : '#38a169';
+        const statusText = ticket.used ? 'USED' : 'ACTIVE';
+        
         div.innerHTML = `
-            <div class="info-text"><strong>${esc(t.name)}</strong><span class="meta-text">${t.code}</span></div>
-            <div>${status}</div>
+            <div class="item-info">
+                <strong>${escapeHtml(ticket.name)}</strong>
+                <span class="item-meta">Code: ${ticket.code}</span>
+            </div>
+            <span style="font-weight:bold; color:${statusColor}; font-size:0.8rem;">${statusText}</span>
         `;
-        allList.appendChild(div);
+        dbListEl.appendChild(div);
     });
 }
 
-function wipeDB() {
-    if(confirm("Удалить ВСЮ базу данных?")) {
+function wipeDatabase() {
+    if(confirm("ВНИМАНИЕ: Вы уверены, что хотите удалить ВСЮ базу данных (NFC и QR)?\nЭто действие необратимо.")) {
         localStorage.removeItem(KEY_NFC);
         localStorage.removeItem(KEY_QR);
         renderLists();
+        alert("База очищена.");
     }
 }
