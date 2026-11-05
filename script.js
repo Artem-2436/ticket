@@ -1,11 +1,14 @@
 // === CONFIGURATION ===
-const BASE_URL = "https://artem-2436.github.io/ticket/"; // Замени на свой реальный URL
-const STORAGE_KEY = 'xcortex_valid_codes'; // Ключ для хранения активных кодов в базе админа
+const BASE_URL = "https://artem-2436.github.io/ticket/"; // ЗАМЕНИ НА СВОЙ URL!
+const STORAGE_KEY_USERS = 'xcortex_users_db';      // База людей (NFC + Имена)
+const STORAGE_KEY_CODES = 'xcortex_active_codes';  // База временных QR кодов
 
 // STATE
 let regTimerInterval = null;
 let currentRegCode = null;
 let html5QrCode = null;
+let nfcReader = null;
+let isScanningActive = false;
 
 // INITIALIZATION
 window.onload = function() {
@@ -24,6 +27,7 @@ function checkHashAndRoute() {
     } else {
         // Обычный режим (Главная или Админ)
         showView('home');
+        loadDB(); // Загружаем базу при старте админа
     }
 }
 
@@ -37,64 +41,164 @@ function showView(viewName) {
 }
 
 function switchTab(tab) {
-    document.getElementById('panel-reg').classList.toggle('hidden', tab !== 'reg');
-    document.getElementById('panel-check').classList.toggle('hidden', tab !== 'check');
-    document.getElementById('tab-reg').className = tab === 'reg' ? 'btn-pri' : 'btn-sec';
-    document.getElementById('tab-check').className = tab === 'check' ? 'btn-pri' : 'btn-sec';
+    // Hide all panels
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    // Show selected panel
+    document.getElementById(`panel-${tab}`).classList.remove('hidden');
+    
+    // Update buttons styling
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    
     stopAllScans();
 }
 
-// --- DATABASE HELPERS (LocalStorage for Admin) ---
+// --- DATABASE HELPERS (LocalStorage) ---
 
-function getValidCodes() {
+function getUsers() {
     try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(STORAGE_KEY_USERS);
         return saved ? JSON.parse(saved) : [];
-    } catch(e) {
-        return [];
+    } catch(e) { return []; }
+}
+
+function saveUser(userObj) {
+    let users = getUsers();
+    // Check duplicate by UID
+    if (!users.some(u => u.uid === userObj.uid)) {
+        users.push(userObj);
+        localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+        renderUsersList();
     }
 }
 
-function saveValidCode(code) {
-    let codes = getValidCodes();
+function deleteUser(uid) {
+    let users = getUsers().filter(u => u.uid !== uid);
+    localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users));
+    renderUsersList();
+}
+
+function findUserByUid(uid) {
+    return getUsers().find(u => u.uid === uid);
+}
+
+// Helper for Active Codes (QR Registration)
+function getActiveCodes() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEY_CODES);
+        return saved ? JSON.parse(saved) : [];
+    } catch(e) { return []; }
+}
+
+function addActiveCode(code) {
+    let codes = getActiveCodes();
     if (!codes.includes(code)) {
         codes.push(code);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(codes));
+        localStorage.setItem(STORAGE_KEY_CODES, JSON.stringify(codes));
     }
 }
 
-function removeValidCode(code) {
-    let codes = getValidCodes();
-    codes = codes.filter(c => c !== code);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(codes));
+function removeActiveCode(code) {
+    let codes = getActiveCodes().filter(c => c !== code);
+    localStorage.setItem(STORAGE_KEY_CODES, JSON.stringify(codes));
 }
 
-function isCodeValid(code) {
-    const codes = getValidCodes();
-    return codes.includes(code);
+function isActiveCodeValid(code) {
+    return getActiveCodes().includes(code);
 }
 
-// --- ADMIN LOGIC: REGISTRATION ---
+// --- ADMIN LOGIC: REGISTER BY NFC ---
 
-function startRegistration() {
+async function startRegisterNFC() {
+    const nameInput = document.getElementById('input-name-nfc').value.trim();
+    if (!nameInput) {
+        alert("Введите ФИО участника!");
+        return;
+    }
+
+    if (!('NDEFReader' in window)) {
+        alert("Web NFC не поддерживается этим браузером.");
+        return;
+    }
+
+    const statusEl = document.getElementById('status-nfc-reg');
+    statusEl.classList.remove('hidden');
+    statusEl.className = 'status-box st-info';
+    statusEl.textContent = "Приложите карту к телефону...";
+
+    try {
+        nfcReader = new NDEFReader();
+        await nfcReader.scan();
+        isScanningActive = true;
+        
+        nfcReader.onreading = event => {
+            let uid = event.serialNumber;
+            
+            if (!uid || uid === "") {
+                statusEl.className = 'status-box st-err';
+                statusEl.textContent = "❌ Ошибка: Браузер скрыл UID.";
+                stopScan();
+                return;
+            }
+
+            uid = uid.toLowerCase();
+
+            if (findUserByUid(uid)) {
+                statusEl.className = 'status-box st-warn';
+                statusEl.textContent = `⚠️ Карта уже зарегистрирована!\nUID: ${uid}`;
+                stopScan();
+                return;
+            }
+
+            const newUser = {
+                uid: uid,
+                name: nameInput,
+                addedAt: Date.now()
+            };
+            
+            saveUser(newUser);
+            
+            statusEl.className = 'status-box st-ok';
+            statusEl.innerHTML = `✅ Успешно!<br>Имя: ${nameInput}<br>UID: ${uid}`;
+            vibrate(true);
+            
+            document.getElementById('input-name-nfc').value = '';
+            stopScan();
+        };
+
+        nfcReader.onerror = err => {
+            statusEl.className = 'status-box st-err';
+            statusEl.textContent = "Ошибка NFC: " + err.name;
+            stopScan();
+        };
+
+    } catch (err) {
+        statusEl.className = 'status-box st-err';
+        statusEl.textContent = "Не удалось запустить сканер: " + err.message;
+        isScanningActive = false;
+    }
+}
+
+// --- ADMIN LOGIC: REGISTER BY QR (TEMP CODE) ---
+
+function startRegistrationQR() {
     // 1. Generate 6-digit code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     currentRegCode = code;
 
     // 2. SAVE TO ADMIN'S LOCALSTORAGE IMMEDIATELY
-    saveValidCode(code);
-    console.log("Saved code to DB:", code);
+    addActiveCode(code);
+    console.log("Saved temp code to DB:", code);
 
     // 3. Prepare UI
-    document.getElementById('reg-idle').classList.add('hidden');
-    document.getElementById('reg-active').classList.remove('hidden');
+    document.getElementById('qr-reg-idle').classList.add('hidden');
+    document.getElementById('qr-reg-active').classList.remove('hidden');
     
-    const statusEl = document.getElementById('reg-status-msg');
+    const statusEl = document.getElementById('qr-reg-status-msg');
     statusEl.className = 'status-box st-info';
     statusEl.innerHTML = `Ожидание сканирования...<br><small>Код ${code} сохранен в базе.</small>`;
 
     // 4. Create Invite Link
-    // Формат: https://site/#login_CODE
     const inviteLink = `${BASE_URL}#login_${code}`;
 
     // 5. Render Big QR
@@ -109,7 +213,7 @@ function startRegistration() {
         correctLevel : QRCode.CorrectLevel.M
     });
 
-    // 6. Start Timer (Visual only, code stays in DB until used or manually cleared)
+    // 6. Start Timer
     startRegTimer(60);
 }
 
@@ -130,11 +234,9 @@ function startRegTimer(seconds) {
 }
 
 function expireRegistration() {
-    // Опционально: удалить код из базы, если время вышло и никто не просканировал
-    // Но лучше оставить, пока админ не нажмет "Новая регистрация", чтобы дать шанс опоздавшим
-    const statusEl = document.getElementById('reg-status-msg');
+    const statusEl = document.getElementById('qr-reg-status-msg');
     statusEl.className = 'status-box st-warn';
-    statusEl.innerHTML = "⏳ Время истекло.<br>Если клиент еще здесь, нажмите 'Новая регистрация'.<br><small>Код все еще активен в базе.</small>";
+    statusEl.innerHTML = "⏳ Время истекло.<br>Если клиент еще здесь, нажмите 'Новая регистрация'.<br><small>Код все еще активен в базе до использования.</small>";
 }
 
 // --- CLIENT LOGIC (Hidden Block) ---
@@ -149,8 +251,7 @@ function renderClientLogin(code) {
     // Display Code Text
     document.getElementById('client-code-display').textContent = code;
 
-    // Generate Small QR containing just the code string for easy scanning by admin
-    // We use a prefix so admin knows what it is: "XC_TICKET:CODE"
+    // Generate Small QR containing just the code string
     const ticketData = `XC_TICKET:${code}`;
     
     const qrContainer = document.getElementById('client-ticket-qr');
@@ -166,6 +267,52 @@ function renderClientLogin(code) {
 }
 
 // --- ADMIN LOGIC: CHECK ENTRY ---
+
+async function startCheckNFC() {
+    if (!('NDEFReader' in window)) {
+        alert("Web NFC не поддерживается.");
+        return;
+    }
+
+    const resultEl = document.getElementById('check-result');
+    resultEl.classList.remove('hidden');
+    resultEl.className = 'status-box st-info';
+    resultEl.textContent = "Приложите карту посетителя...";
+
+    try {
+        nfcReader = new NDEFReader();
+        await nfcReader.scan();
+        isScanningActive = true;
+        
+        nfcReader.onreading = event => {
+            let uid = event.serialNumber?.toLowerCase();
+            
+            if (!uid) {
+                resultEl.className = 'status-box st-err';
+                resultEl.textContent = "❌ Не удалось прочитать UID.";
+                stopScan();
+                return;
+            }
+
+            const user = findUserByUid(uid);
+
+            if (!user) {
+                resultEl.className = 'status-box st-err';
+                resultEl.textContent = `❌ ОТКАЗАНО\nКарта не найдена.\nUID: ${uid}`;
+                vibrate(false);
+            } else {
+                resultEl.className = 'status-box st-ok';
+                resultEl.innerHTML = `✅ ДОСТУП РАЗРЕШЕН<br>Здравствуйте, <strong>${user.name}</strong>!`;
+                vibrate(true);
+            }
+            stopScan();
+        };
+    } catch (err) {
+        resultEl.className = 'status-box st-err';
+        resultEl.textContent = "Ошибка: " + err.message;
+        isScanningActive = false;
+    }
+}
 
 function openScanner() {
     document.getElementById('scanner-view').classList.remove('hidden');
@@ -206,14 +353,14 @@ function onScanSuccess(decodedText, decodedResult) {
 
         const code = decodedText.split(':')[1];
         
-        // CHECK AGAINST ADMIN'S LOCALSTORAGE
-        if (isCodeValid(code)) {
+        // CHECK AGAINST ADMIN'S LOCALSTORAGE (Active Codes)
+        if (isActiveCodeValid(code)) {
             resultEl.className = 'status-box st-ok';
             resultEl.innerHTML = `✅ ДОСТУП РАЗРЕШЕН<br>Код: <strong>${code}</strong>`;
             vibrate(true);
             
             // Optional: Remove code after successful entry (One-time use)
-            // removeValidCode(code); 
+            // removeActiveCode(code); 
             
         } else {
             resultEl.className = 'status-box st-err';
@@ -230,8 +377,16 @@ function onScanSuccess(decodedText, decodedResult) {
 
 function onScanFailure(error) {}
 
+function stopScan() {
+    if (nfcReader && isScanningActive) {
+        nfcReader.stopScan().catch(()=>{});
+        isScanningActive = false;
+    }
+}
+
 function stopAllScans() {
     closeScanner();
+    stopScan();
     clearInterval(regTimerInterval);
 }
 
@@ -240,4 +395,46 @@ function vibrate(success) {
         if(success) navigator.vibrate([100, 50, 100]);
         else navigator.vibrate([200, 100, 200]);
     }
+}
+
+// --- RENDER USERS LIST ---
+
+function loadDB() {
+    renderUsersList();
+}
+
+function renderUsersList() {
+    const container = document.getElementById('users-container');
+    const countLabel = document.getElementById('count-users');
+    const users = getUsers();
+    
+    container.innerHTML = '';
+    countLabel.textContent = users.length;
+
+    if (users.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#aaa; font-size:0.9rem;">Нет зарегистрированных участников.</p>';
+        return;
+    }
+
+    const sorted = [...users].sort((a,b) => b.addedAt - a.addedAt);
+
+    sorted.forEach(user => {
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        
+        div.innerHTML = `
+            <div class="user-info">
+                <div class="user-name">${escapeHtml(user.name)}</div>
+                <div class="user-uid">${user.uid}</div>
+            </div>
+            <div class="actions">
+                <button class="btn-danger" onclick="deleteUser('${user.uid}')">✖</button>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function escapeHtml(text) {
+    return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
