@@ -1,26 +1,34 @@
 // === НАСТРОЙКИ ===
-const KEY_NFC = 'xc_nfc_v10';
-const KEY_QR = 'xc_qr_v10';
+const KEY_NFC = 'xc_nfc_final';
+const KEY_QR = 'xc_qr_final';
 
 let nfcReader = null;
 let qrScanner = null;
 
-// Инициализация при загрузке
+// Инициализация
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("Xcortex System Ready");
-    // Проверяем библиотеки
-    if(typeof QRCode === 'undefined') alert("Ошибка: Не загрузилась библиотека QR Code. Проверьте интернет.");
-    if(typeof Html5Qrcode === 'undefined') alert("Ошибка: Не загрузилась библиотека сканера. Проверьте интернет.");
+    console.log("Xcortex Final Loaded");
     
-    renderLists(); // Рисуем списки сразу
+    // Проверка библиотек
+    if(typeof QRCode === 'undefined') {
+        alert("Ошибка загрузки QR библиотеки. Обновите страницу.");
+        return;
+    }
+    if(typeof Html5Qrcode === 'undefined') {
+        alert("Ошибка загрузки сканера камеры. Обновите страницу.");
+        return;
+    }
+
+    renderLists();
 });
 
-// --- НАВИГАЦИЯ ---
+// --- НАВИГАЦИЯ (ИСПРАВЛЕНО) ---
 
 function enterApp() {
     document.getElementById('view-login').style.display = 'none';
     document.getElementById('view-admin').style.display = 'block';
-    switchTab('nfc'); // Открываем первую вкладку
+    // Принудительно переключаем на первую вкладку после входа
+    switchTab('nfc'); 
 }
 
 function logoutApp() {
@@ -29,33 +37,47 @@ function logoutApp() {
     document.getElementById('view-login').style.display = 'block';
 }
 
-// Переключение вкладок через делегирование событий или прямой вызов
-// Используем прямой вызов для простоты
-window.switchTab = function(tabName) {
-    // Скрыть все панели
-    document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
-    
-    // Показать нужную
+/**
+ * Главная функция переключения вкладок.
+ * Работает через ID элементов, а не через event.target.
+ * Это исключает ошибки при тапах на телефоне.
+ */
+function switchTab(tabName) {
+    // 1. Скрываем ВСЕ панели контента
+    const panels = document.querySelectorAll('.tab-panel');
+    panels.forEach(panel => {
+        panel.classList.add('hidden');
+        panel.classList.remove('active'); // Убираем активный класс, если он был
+    });
+
+    // 2. Находим нужную панель и показываем её
     const targetPanel = document.getElementById(`tab-${tabName}`);
-    if(targetPanel) {
+    if (targetPanel) {
         targetPanel.classList.remove('hidden');
         targetPanel.classList.add('active');
+    } else {
+        console.error(`Панель tab-${tabName} не найдена!`);
+        return; // Прерываем выполнение, если элемент не найден
     }
 
-    // Обновить кнопки табов
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    // 3. Обновляем стиль кнопок табов
+    const tabs = document.querySelectorAll('.tab-btn');
+    tabs.forEach(btn => {
         btn.classList.remove('active');
-        if(btn.getAttribute('data-tab') === tabName) {
+        // Проверяем атрибут data-tab кнопки
+        if (btn.getAttribute('data-tab') === tabName) {
             btn.classList.add('active');
         }
     });
 
-    stopAllScans(); // Останавливаем сканеры при переключении
-    
-    // Если перешли на список, обновляем его
-    if(tabName === 'db') renderLists();
-};
+    // 4. Останавливаем любые активные сканеры при переключении
+    stopAllScans();
+
+    // 5. Если перешли на базу данных, обновляем список
+    if (tabName === 'db') {
+        renderLists();
+    }
+}
 
 // --- БАЗА ДАННЫХ (LocalStorage Helpers) ---
 
@@ -66,7 +88,6 @@ function getNFCUsers() {
 
 function saveNFCUser(user) { 
     let list = getNFCUsers(); 
-    // Проверка дубликата UID
     if(!list.find(u => u.uid === user.uid)) { 
         list.push(user); 
         localStorage.setItem(KEY_NFC, JSON.stringify(list)); 
@@ -92,7 +113,6 @@ function getQRTickets() {
 
 function saveQRTicket(ticket) { 
     let list = getQRTickets(); 
-    // Проверка дубликата кода
     if(!list.find(t => t.code === ticket.code)) { 
         list.push(ticket); 
         localStorage.setItem(KEY_QR, JSON.stringify(list)); 
@@ -184,7 +204,7 @@ function highlightListItem(uid) {
     for(let i = 0; i < items.length; i++) {
         if(items[i].getAttribute('data-id') === uid) {
             items[i].scrollIntoView({behavior:'smooth', block:'center'});
-            items[i].style.backgroundColor = '#fffbe6'; // Желтая подсветка
+            items[i].style.backgroundColor = '#fffbe6'; 
             setTimeout(() => { items[i].style.backgroundColor = ''; }, 2000);
             break;
         }
@@ -198,22 +218,19 @@ function generateQR() {
     const name = nameInput.value.trim();
     if(!name) return alert("Введите ФИО клиента!");
 
-    // Генерируем уникальный 6-значный код
     let code;
     do {
         code = Math.floor(100000 + Math.random() * 900000).toString();
-    } while(findQRTicket(code)); // Пока не найдем свободный
+    } while(findQRTicket(code)); 
 
     saveQRTicket({code, name, used:false, time:Date.now()});
 
-    // Обновляем UI
     document.getElementById('area-qr-result').classList.remove('hidden');
     document.getElementById('txt-qr-name').textContent = name;
     document.getElementById('txt-qr-code').textContent = code;
 
-    // Рисуем QR
     const qrBox = document.getElementById('box-qr-img');
-    qrBox.innerHTML = ''; // Очищаем старый
+    qrBox.innerHTML = ''; 
     new QRCode(qrBox, {
         text: `XC:${code}`,
         width: 150,
@@ -221,7 +238,7 @@ function generateQR() {
         correctLevel : QRCode.CorrectLevel.H
     });
     
-    renderLists(); // Обновляем общий список
+    renderLists(); 
 }
 
 function resetQRForm() {
@@ -262,7 +279,6 @@ function startCameraScan() {
     document.getElementById('msg-check').classList.add('hidden');
     
     qrScanner = new Html5Qrcode("reader-element");
-    // Запускаем камеру
     qrScanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 150 }, onQrSuccess, onQrFail)
         .catch(e => { 
             alert("Ошибка доступа к камере: " + e); 
@@ -285,7 +301,6 @@ function onQrSuccess(decodedText) {
     const msgEl = document.getElementById('msg-check');
     msgEl.classList.remove('hidden');
     
-    // Проверяем формат XC:CODE
     if(decodedText.startsWith('XC:')) {
         const code = decodedText.split(':')[1];
         const ticket = findQRTicket(code);
@@ -300,22 +315,20 @@ function onQrSuccess(decodedText) {
             markTicketUsed(ticket.code);
             showMsg(msgEl, `✅ ДОСТУП РАЗРЕШЕН<br>Клиент: ${ticket.name}`, "ok"); 
             vib(true);
-            renderLists(); // Обновляем статус в списке
+            renderLists(); 
         }
     } else {
         showMsg(msgEl, "❌ НЕ НАШ ФОРМАТ<br>Это не Xcortex билет.", "err");
     }
 }
 
-function onQrFail(error) {
-    // Игнорируем ошибки во время процесса сканирования
-}
+function onQrFail(error) {}
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 function showMsg(element, text, type) {
     element.textContent = text;
-    element.className = 'message-box'; // Сбрасываем классы
+    element.className = 'message-box'; 
     if(type === 'ok') element.classList.add('msg-ok');
     if(type === 'err') element.classList.add('msg-err');
     if(type === 'info') element.classList.add('msg-info');
@@ -354,7 +367,6 @@ function renderLists() {
     nfcListEl.innerHTML = '';
     nfcCountEl.textContent = users.length;
     
-    // Сортировка: новые сверху
     [...users].sort((a,b) => b.time - a.time).forEach(user => {
         const div = document.createElement('div');
         div.className = 'list-item';
