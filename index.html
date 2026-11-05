@@ -4,86 +4,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Xcortex Event Hub</title>
-    
-    <!-- Подключение стилей -->
     <link rel="stylesheet" href="style.css">
     
-    <!-- Библиотеки (CDN) -->
-    <!-- QR Code Generator -->
+    <!-- Библиотеки -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <!-- HTML5 QR Scanner (Camera) -->
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <!-- CryptoJS for HMAC Signature -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
 </head>
 <body>
 
 <div class="container" id="app">
-    <!-- Главное меню -->
+    <!-- ГЛАВНОЕ МЕНЮ (Админ / Выбор роли) -->
     <div id="view-home">
-        <h1>Xcortex Event Hub</h1>
-        <p class="subtitle">Локальная система управления доступом</p>
+        <h1>Xcortex Ticket</h1>
+        <p class="subtitle">Система контроля доступа</p>
+        
+        <!-- Если открыто без хеша - показываем выбор -->
         <button class="btn-pri" onclick="showView('admin')">🛡 Панель Организатора</button>
         <br><br>
-        <small style="color:#aaa;">v3.0 Secure Local | Asinhrom / Xcortex</small>
+        <small style="color:#aaa;">v5.0 Pre-generated Codes | Asinhrom / Xcortex</small>
     </div>
 
-    <!-- Админская панель -->
+    <!-- АДМИНСКАЯ ПАНЕЛЬ -->
     <div id="view-admin" class="hidden">
         <h1>Организатор</h1>
         
-        <!-- Табы переключения режимов -->
         <div style="display:flex; gap:10px; margin-bottom:20px;">
             <button class="btn-sec" id="tab-reg" onclick="switchTab('reg')" style="flex:1;">➕ Регистрация</button>
             <button class="btn-sec" id="tab-check" onclick="switchTab('check')" style="flex:1;">✅ Проверка входа</button>
         </div>
 
-        <!-- БЛОК РЕГИСТРАЦИИ -->
+        <!-- Таб Регистрации -->
         <div id="panel-reg">
-            <div class="form-group">
-                <label class="form-label">ФИО Участника</label>
-                <input type="text" id="input-name" class="form-input" placeholder="Иванов Иван Иванович">
+            <div id="reg-idle">
+                <p>Нажмите кнопку, чтобы сгенерировать одноразовый пропуск.</p>
+                <button class="btn-pri" onclick="startRegistration()">🚀 Выдать QR для регистрации</button>
             </div>
-            
-            <button class="btn-pri" id="btn-scan-register" onclick="startRegisterScan()">📱 Приложить карту для записи</button>
-            <div id="reg-status" class="status-box hidden"></div>
-            
-            <hr style="border:0; height:1px; background:#eee; margin:20px 0;">
-            
-            <strong>База участников (<span id="count-users">0</span>)</strong>
-            <div class="user-list" id="users-container"></div>
+
+            <div id="reg-active" class="hidden">
+                <div class="timer-box">⏳ Живет: <span id="reg-timer">60</span> сек.</div>
+                <p style="font-size:0.9rem; color:#666;">Покажите этот код клиенту:</p>
+                <div id="invite-qr-container" class="qr-center"></div>
+                
+                <hr style="border:0; height:1px; background:#eee; margin:20px 0;">
+                
+                <div class="status-box st-info" id="reg-status-msg">
+                    Ожидание сканирования...<br>
+                    <small>Код сохранен в базе автоматически.</small>
+                </div>
+            </div>
         </div>
 
-        <!-- БЛОК ПРОВЕРКИ -->
+        <!-- Таб Проверки Входа -->
         <div id="panel-check" class="hidden">
-            <button class="btn-pri" onclick="startCheckNFC()">💳 Сканировать NFC карту</button>
-            <button class="btn-sec" onclick="openQrScanner()">📷 Сканировать QR код</button>
+            <button class="btn-pri" onclick="openScanner()">📷 Сканировать билет клиента</button>
             
-            <div id="check-result" class="status-box hidden"></div>
-            
-            <div id="camera-view" class="hidden" style="margin-top:15px;">
+            <div id="scanner-view" class="hidden" style="margin-top:15px;">
                 <div id="reader-container"><div id="reader"></div></div>
-                <button class="btn-danger btn-small" onclick="closeQrScanner()">Закрыть камеру</button>
+                <button class="btn-danger btn-small" onclick="closeScanner()">Стоп</button>
             </div>
+
+            <div id="check-result" class="status-box hidden"></div>
         </div>
 
         <br>
         <a href="#" onclick="showView('home')" style="color:#888; text-decoration:none; font-size:0.9rem;">← Выход</a>
     </div>
-</div>
 
-<!-- Модальное окно для показа QR -->
-<div id="qr-modal" class="modal-overlay hidden" onclick="this.classList.add('hidden')">
-    <div class="modal-content" onclick="event.stopPropagation()">
-        <h3>Пропуск участника</h3>
-        <p id="modal-name" style="font-weight:bold;"></p>
-        <div id="qr-display-modal"></div>
-        <p style="font-size:0.8rem; color:#666;">Покажите этот экран охраннику</p>
-        <button class="btn-sec btn-small" onclick="document.getElementById('qr-modal').classList.add('hidden')">Закрыть</button>
+    <!-- СКРЫТЫЙ БЛОК КЛИЕНТА (Активируется только при наличии #login_CODE в URL) -->
+    <div id="view-client-login" class="hidden">
+        <h1>Ваш Пропуск</h1>
+        <p class="subtitle">Покажите этот экран охраннику</p>
+        
+        <div id="client-ticket-qr" class="qr-center large-qr"></div>
+        
+        <div class="status-box st-ok" style="text-align:center; margin-top:20px;">
+            ✅ Билет готов!<br>
+            Код: <strong id="client-code-display"></strong>
+        </div>
+        
+        <br>
+        <button class="btn-sec" onclick="window.close()">Закрыть</button>
     </div>
 </div>
 
-<!-- Подключение логики -->
 <script src="script.js"></script>
 
 </body>
